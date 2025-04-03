@@ -1,0 +1,615 @@
+-- AUTHENTICATION SYSTEM --
+CREATE TABLE User (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  firstName VARCHAR(50) NOT NULL,
+  lastName VARCHAR(50) NOT NULL,
+  email VARCHAR(100) UNIQUE NOT NULL,
+  passwordHash VARCHAR(255) NOT NULL,
+  role ENUM('admin', 'hod', 'proctor', 'faculty', 'student') NOT NULL,
+  isVerified BOOLEAN DEFAULT FALSE,
+  verificationToken VARCHAR(100),
+  resetPasswordToken VARCHAR(100),
+  resetPasswordExpires DATETIME,
+  refreshToken VARCHAR(255),
+  lastLogin TIMESTAMP,
+  status ENUM('active', 'inactive', 'suspended') DEFAULT 'active' NOT NULL,
+  profileImage VARCHAR(255),
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_user_email (email),
+  INDEX idx_user_role (role),
+  INDEX idx_user_status (status)
+);
+
+-- CORE ENTITIES --
+CREATE TABLE Admin (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  userId BIGINT NOT NULL UNIQUE,
+  designation VARCHAR(100) NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE
+);
+
+-- Replacing JSON with a proper table for admin privileges
+CREATE TABLE AdminPrivilege (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  adminId BIGINT NOT NULL,
+  privilegeName VARCHAR(50) NOT NULL,
+  isGranted BOOLEAN DEFAULT TRUE,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_admin_privilege (adminId, privilegeName),
+  FOREIGN KEY (adminId) REFERENCES Admin(id) ON DELETE CASCADE
+);
+
+CREATE TABLE Department (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  code VARCHAR(10) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  hodId BIGINT,
+  establishedYear INT NOT NULL,
+  description TEXT,
+  status ENUM('active', 'inactive') DEFAULT 'active' NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_department_code (code),
+  INDEX idx_department_status (status)
+);
+
+CREATE TABLE Faculty (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  userId BIGINT NOT NULL UNIQUE,
+  facultyId VARCHAR(20) UNIQUE NOT NULL,
+  departmentId BIGINT NOT NULL,
+  designation VARCHAR(100) NOT NULL,
+  qualification VARCHAR(255) NOT NULL,
+  specialization VARCHAR(255),
+  experience INT NOT NULL DEFAULT 0,
+  dateOfJoining DATE NOT NULL,
+  status ENUM('active', 'inactive', 'on_leave') DEFAULT 'active' NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE,
+  FOREIGN KEY (departmentId) REFERENCES Department(id),
+  INDEX idx_faculty_facultyId (facultyId),
+  INDEX idx_faculty_department (departmentId),
+  INDEX idx_faculty_status (status)
+);
+
+-- Update Department with proper FK
+ALTER TABLE
+  Department
+ADD
+  CONSTRAINT fk_department_hod FOREIGN KEY (hodId) REFERENCES Faculty(id) ON DELETE SET NULL;
+
+CREATE TABLE Batch (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  name VARCHAR(50) NOT NULL,
+  academicYear VARCHAR(20) NOT NULL,
+  departmentId BIGINT NOT NULL,
+  startDate DATE NOT NULL,
+  endDate DATE NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (departmentId) REFERENCES Department(id),
+  INDEX idx_batch_academicYear (academicYear),
+  INDEX idx_batch_department (departmentId),
+  CONSTRAINT chk_batch_dates CHECK (endDate > startDate)
+);
+
+CREATE TABLE Student (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  userId BIGINT NOT NULL UNIQUE,
+  studentId VARCHAR(20) UNIQUE NOT NULL,
+  usn VARCHAR(20) UNIQUE NOT NULL,
+  departmentId BIGINT NOT NULL,
+  batchId BIGINT NOT NULL,
+  section VARCHAR(10) NOT NULL,
+  semester TINYINT NOT NULL,
+  admissionYear INT NOT NULL,
+  graduationYear INT,
+  proctorId BIGINT,
+  dob DATE NOT NULL,
+  gender ENUM('male', 'female', 'other') NOT NULL,
+  bloodGroup VARCHAR(5),
+  category VARCHAR(50) NOT NULL,
+  aidedStatus ENUM('aided', 'unaided') NOT NULL,
+  phoneNumber VARCHAR(15) NOT NULL,
+  alternatePhoneNumber VARCHAR(15),
+  personalEmail VARCHAR(100) NOT NULL,
+  currentAddress TEXT,
+  status ENUM(
+    'active',
+    'inactive',
+    'graduated',
+    'dropped'
+  ) DEFAULT 'active' NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE,
+  FOREIGN KEY (departmentId) REFERENCES Department(id),
+  FOREIGN KEY (batchId) REFERENCES Batch(id),
+  FOREIGN KEY (proctorId) REFERENCES Faculty(id) ON DELETE SET NULL,
+  INDEX idx_student_studentId (studentId),
+  INDEX idx_student_usn (usn),
+  INDEX idx_student_department (departmentId),
+  INDEX idx_student_batch (batchId),
+  INDEX idx_student_proctor (proctorId),
+  INDEX idx_student_status (status),
+  INDEX idx_student_admissionYear (admissionYear)
+);
+
+CREATE TABLE
+  Address (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    userId BIGINT NOT NULL,
+    addressType ENUM('permanent', 'current', 'office') NOT NULL,
+    addressLine1 VARCHAR(255) NOT NULL,
+    addressLine2 VARCHAR(255),
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(100) NOT NULL,
+    country VARCHAR(100) NOT NULL DEFAULT 'India',
+    postalCode VARCHAR(20) NOT NULL,
+    isDefault BOOLEAN DEFAULT FALSE,
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (userId) REFERENCES User(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_user_address_type (userId, addressType, isDefault),
+    INDEX idx_address_user (userId)
+  );
+
+CREATE TABLE
+  StudentGuardian (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    studentId BIGINT NOT NULL,
+    relationship ENUM('father', 'mother', 'guardian') NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    occupation VARCHAR(100),
+    qualification VARCHAR(100),
+    phoneNumber VARCHAR(255) NOT NULL,
+    -- Encrypted field
+    email VARCHAR(255),
+    -- Encrypted field
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (studentId) REFERENCES Student(id) ON DELETE CASCADE,
+    INDEX idx_guardian_student (studentId),
+    INDEX idx_guardian_relationship (relationship)
+  );
+
+-- ACADEMIC STRUCTURE --
+CREATE TABLE Programme (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  code VARCHAR(10) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  duration TINYINT NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_programme_code (code),
+  CONSTRAINT chk_programme_duration CHECK (duration > 0)
+);
+
+CREATE TABLE Semester (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  academicYear VARCHAR(20) NOT NULL,
+  term ENUM('odd', 'even') NOT NULL,
+  number TINYINT NOT NULL,
+  programmeId BIGINT NOT NULL,
+  startDate DATE NOT NULL,
+  endDate DATE NOT NULL,
+  status ENUM('upcoming', 'current', 'completed') NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (programmeId) REFERENCES Programme(id),
+  INDEX idx_semester_academic_year_term (academicYear, term),
+  INDEX idx_semester_programme (programmeId),
+  INDEX idx_semester_status (status),
+  CONSTRAINT chk_semester_dates CHECK (endDate > startDate),
+  CONSTRAINT chk_semester_number CHECK (number > 0)
+);
+
+-- Replace ENUM with reference table for course types
+CREATE TABLE CourseType (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  code VARCHAR(10) UNIQUE NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Insert default course types
+INSERT INTO
+  CourseType (code, name)
+VALUES
+  ('PCC', 'Professional Core Course'),
+  ('PEC', 'Professional Elective Course'),
+  ('OEC', 'Open Elective Course'),
+  ('PRJ', 'Project'),
+  ('NCMC', 'Non-Credit Mandatory Course'),
+  ('BSC', 'Basic Science Course'),
+  ('AEC', 'Ability Enhancement Course');
+
+CREATE TABLE Course (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  code VARCHAR(20) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  departmentId BIGINT NOT NULL,
+  credits DECIMAL(3, 1) NOT NULL,
+  description TEXT,
+  courseTypeId BIGINT NOT NULL,
+  syllabus TEXT,
+  status ENUM('active', 'inactive') DEFAULT 'active' NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (departmentId) REFERENCES Department(id),
+  FOREIGN KEY (courseTypeId) REFERENCES CourseType(id),
+  INDEX idx_course_code (code),
+  INDEX idx_course_department (departmentId),
+  INDEX idx_course_type (courseTypeId),
+  INDEX idx_course_status (status),
+  CONSTRAINT chk_course_credits CHECK (credits >= 0)
+);
+
+-- Course prerequisites
+CREATE TABLE CoursePrerequisite (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  courseId BIGINT NOT NULL,
+  prerequisiteCourseId BIGINT NOT NULL,
+  isRequired BOOLEAN DEFAULT TRUE,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (courseId) REFERENCES Course(id) ON DELETE CASCADE,
+  FOREIGN KEY (prerequisiteCourseId) REFERENCES Course(id),
+  UNIQUE KEY uk_course_prerequisite (courseId, prerequisiteCourseId)
+);
+
+CREATE TABLE CourseAllocation (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  courseId BIGINT NOT NULL,
+  facultyId BIGINT NOT NULL,
+  semesterId BIGINT NOT NULL,
+  section VARCHAR(10) NOT NULL,
+  batchId BIGINT NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (courseId) REFERENCES Course(id),
+  FOREIGN KEY (facultyId) REFERENCES Faculty(id),
+  FOREIGN KEY (semesterId) REFERENCES Semester(id),
+  FOREIGN KEY (batchId) REFERENCES Batch(id),
+  UNIQUE KEY uk_course_allocation (
+    courseId,
+    facultyId,
+    semesterId,
+    section,
+    batchId
+  ),
+  INDEX idx_course_allocation_course (courseId),
+  INDEX idx_course_allocation_faculty (facultyId),
+  INDEX idx_course_allocation_semester (semesterId)
+);
+
+CREATE TABLE CourseRegistration (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  studentId BIGINT NOT NULL,
+  courseId BIGINT NOT NULL,
+  semesterId BIGINT NOT NULL,
+  registrationDate TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  status ENUM('registered', 'dropped', 'completed') DEFAULT 'registered' NOT NULL,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (studentId) REFERENCES Student(id),
+  FOREIGN KEY (courseId) REFERENCES Course(id),
+  FOREIGN KEY (semesterId) REFERENCES Semester(id),
+  UNIQUE KEY uk_course_registration (studentId, courseId, semesterId),
+  INDEX idx_course_registration_student (studentId),
+  INDEX idx_course_registration_course (courseId),
+  INDEX idx_course_registration_semester (semesterId),
+  INDEX idx_course_registration_status (status)
+);
+
+-- ACADEMIC FEATURES --
+-- Replace ENUM with reference table for attendance status
+CREATE TABLE AttendanceStatusType (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(20) UNIQUE NOT NULL,
+  description TEXT,
+  isCountedPresent BOOLEAN DEFAULT FALSE,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Insert default attendance status types
+INSERT INTO
+  AttendanceStatusType (name, isCountedPresent, description)
+VALUES
+  ('present', TRUE, 'Student was present for the class'),
+  ('absent', FALSE, 'Student was absent for the class'),
+  ('late', TRUE, 'Student arrived late but attended the class'),
+  ('excused', TRUE, 'Student was absent with valid excuse');
+
+CREATE TABLE Attendance (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  studentId BIGINT NOT NULL,
+  courseId BIGINT NOT NULL,
+  semesterId BIGINT NOT NULL,
+  date DATE NOT NULL,
+  statusId BIGINT NOT NULL,
+  markedBy BIGINT NOT NULL,
+  remarks VARCHAR(255),
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (studentId) REFERENCES Student(id),
+  FOREIGN KEY (courseId) REFERENCES Course(id),
+  FOREIGN KEY (semesterId) REFERENCES Semester(id),
+  FOREIGN KEY (markedBy) REFERENCES Faculty(id),
+  FOREIGN KEY (statusId) REFERENCES AttendanceStatusType(id),
+  UNIQUE KEY uk_attendance (studentId, courseId, date),
+  INDEX idx_attendance_date (date),
+  INDEX idx_attendance_student_course (studentId, courseId)
+);
+
+CREATE TABLE AttendanceSummary (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  uuid VARCHAR(36) UNIQUE NOT NULL,
+  studentId BIGINT NOT NULL,
+  courseId BIGINT NOT NULL,
+  semesterId BIGINT NOT NULL,
+  totalClasses INT NOT NULL DEFAULT 0,
+  attended INT NOT NULL DEFAULT 0,
+  condonationApplied BOOLEAN DEFAULT FALSE,
+  condonationStatus ENUM('pending', 'approved', 'rejected'),
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (studentId) REFERENCES Student(id),
+  FOREIGN KEY (courseId) REFERENCES Course(id),
+  FOREIGN KEY (semesterId) REFERENCES Semester(id),
+  UNIQUE KEY uk_attendance_summary (studentId, courseId, semesterId),
+  INDEX idx_attendance_summary_student (studentId),
+  INDEX idx_attendance_summary_course_semester (courseId, semesterId),
+  CONSTRAINT chk_attendance_summary_counts CHECK (attended <= totalClasses)
+);
+
+-- Add virtual column for percentage (MySQL 8+)
+ALTER TABLE
+  AttendanceSummary
+ADD
+  COLUMN percentage DECIMAL(5, 2) AS (
+    CASE
+      WHEN totalClasses > 0 THEN (attended / totalClasses) * 100
+      ELSE 0
+    END
+  ) VIRTUAL;
+
+-- Replace ENUM with reference table for exam types
+CREATE TABLE ExamType (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  code VARCHAR(10) UNIQUE NOT NULL,
+  name VARCHAR(50) NOT NULL,
+  description TEXT,
+  createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Insert default exam types
+INSERT INTO
+  ExamType (code, name)
+VALUES
+  ('CIE1', 'Continuous Internal Evaluation 1'),
+  ('CIE2', 'Continuous Internal Evaluation 2'),
+  ('CIE3', 'Continuous Internal Evaluation 3'),
+  ('LAB1', 'Laboratory Assessment 1'),
+  ('LAB2', 'Laboratory Assessment 2'),
+  ('AAT1', 'Alternative Assessment Test 1'),
+  ('AAT2', 'Alternative Assessment Test 2'),
+  ('SEE', 'Semester End Examination');
+
+CREATE TABLE
+  Exam (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    courseId BIGINT NOT NULL,
+    semesterId BIGINT NOT NULL,
+    examTypeId BIGINT NOT NULL,
+    examDate DATETIME NOT NULL,
+    totalMarks DECIMAL(5, 2) NOT NULL,
+    passingMarks DECIMAL(5, 2) NOT NULL,
+    weightage DECIMAL(5, 2) NOT NULL,
+    -- Weightage of exam in total course marks
+    isPublished BOOLEAN DEFAULT FALSE,
+    -- Marks published or not
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (courseId) REFERENCES Course(id),
+    FOREIGN KEY (semesterId) REFERENCES Semester(id),
+    FOREIGN KEY (examTypeId) REFERENCES ExamType(id),
+    INDEX idx_exam_course_semester (courseId, semesterId),
+    INDEX idx_exam_exam_type (examTypeId),
+    CONSTRAINT chk_exam_marks CHECK (totalMarks > 0 AND passingMarks >= 0),
+    CONSTRAINT chk_exam_weightage CHECK (weightage BETWEEN 0 AND 100)
+  );
+
+CREATE TABLE
+  GradeScale (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    code VARCHAR(2) UNIQUE NOT NULL,
+    -- e.g., A+, B-, C
+    name VARCHAR(50) NOT NULL,
+    -- e.g., Excellent, Good
+    gradePoint DECIMAL(4, 2) NOT NULL,
+    -- e.g., 4.0, 3.0
+    lowerLimit DECIMAL(5, 2) NOT NULL,
+    -- Minimum percentage for this grade
+    upperLimit DECIMAL(5, 2) NOT NULL,
+    -- Maximum percentage for this grade
+    description TEXT,
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT chk_grade_limits CHECK (lowerLimit <= upperLimit)
+  );
+
+CREATE TABLE
+  ExamResult (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    studentId BIGINT NOT NULL,
+    examId BIGINT NOT NULL,
+    marksObtained DECIMAL(5, 2) NOT NULL,
+    gradeId BIGINT,
+    -- Can be NULL if not graded
+    resultStatus ENUM('pass', 'fail', 'absent') NOT NULL,
+    -- Status of the result
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (studentId) REFERENCES Student(id),
+    FOREIGN KEY (examId) REFERENCES Exam(id),
+    FOREIGN KEY (gradeId) REFERENCES GradeScale(id),
+    INDEX idx_exam_result_student_exam (studentId, examId),
+    INDEX idx_exam_result_status (resultStatus),
+    CONSTRAINT chk_exam_result_marks CHECK (marksObtained >= 0)
+  );
+
+-- FINANCIAL MANAGEMENT --
+CREATE TABLE
+  FeeStructure (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    programmeId BIGINT NOT NULL,
+    academicYear VARCHAR(20) NOT NULL,
+    totalAmount DECIMAL(10, 2) NOT NULL,
+    -- Total fee amount
+    description TEXT,
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (programmeId) REFERENCES Programme(id),
+    INDEX idx_fee_structure_programme_year (programmeId, academicYear),
+    CONSTRAINT chk_fee_amount CHECK (totalAmount > 0)
+  );
+
+CREATE TABLE
+  FeePayment (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    studentId BIGINT NOT NULL,
+    paymentDate DATETIME NOT NULL,
+    amountPaid DECIMAL(10, 2) NOT NULL,
+    -- Amount paid in this installment
+    paymentMode ENUM(
+      'cash',
+      'card',
+      'online',
+      'check',
+      'dd'
+    ) NOT NULL,
+    transactionId VARCHAR(255),
+    receiptNumber VARCHAR(255) UNIQUE NOT NULL,
+    -- Unique receipt number
+    remarks TEXT,
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (studentId) REFERENCES Student(id),
+    INDEX idx_fee_payment_student_date (studentId, paymentDate),
+    INDEX idx_fee_payment_mode (paymentMode),
+    CONSTRAINT chk_payment_amount CHECK (amountPaid > 0)
+  );
+
+CREATE TABLE
+  FeeBalance (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    studentId BIGINT NOT NULL,
+    feeStructureId BIGINT NOT NULL,
+    totalAmount DECIMAL(10, 2) NOT NULL,
+    -- Total fee applicable
+    paidAmount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    -- Total amount paid so far
+    balanceAmount DECIMAL(10, 2) AS (totalAmount - paidAmount),
+    -- Balance amount (virtual column)
+    lastPaymentDate DATETIME,
+    -- Last payment date
+    dueDate DATETIME,
+    -- Due date for next payment
+    concessionAmount DECIMAL(10, 2) DEFAULT 0,
+    -- Any concession given
+    waiverRemarks TEXT,
+    -- Remarks on waiver
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (studentId) REFERENCES Student(id),
+    FOREIGN KEY (feeStructureId) REFERENCES FeeStructure(id),
+    INDEX idx_fee_balance_student (studentId),
+    INDEX idx_fee_balance_structure (feeStructureId),
+    CONSTRAINT chk_fee_balance_amounts CHECK (
+      totalAmount >= 0 AND paidAmount >= 0
+    )
+  );
+
+-- COMMUNICATION AND NOTIFICATIONS --
+CREATE TABLE
+  Notice (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    content TEXT NOT NULL,
+    targetAudience JSON,
+    -- Using JSON for flexible audience targeting
+    targetDepartments JSON,
+    -- Using JSON for flexible department targeting
+    createdBy BIGINT NOT NULL,
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (createdBy) REFERENCES User(id),
+    INDEX idx_notice_creator (createdBy)
+  );
+
+CREATE TABLE
+  Event (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    eventDate DATETIME NOT NULL,
+    location VARCHAR(255),
+    organizer VARCHAR(255),
+    targetAudience JSON,
+    -- Using JSON for audience targeting
+    createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  );
+
+-- LOGGING AND AUDITING --
+CREATE TABLE
+  ActivityLog (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid VARCHAR(36) UNIQUE NOT NULL,
+    userId BIGINT,
+    -- User performing the action
+    activityType VARCHAR(100) NOT NULL,
+    -- Type of activity
+    activityDetails TEXT,
+    -- Details of the activity
+    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_activity_log_user (userId),
+    INDEX idx_activity_log_type (activityType)
+  );
+
+
+
+
+
+
+
