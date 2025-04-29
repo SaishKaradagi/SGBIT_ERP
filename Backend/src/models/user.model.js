@@ -1,7 +1,7 @@
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 
 const userSchema = new mongoose.Schema({
   uuid: {
@@ -14,12 +14,19 @@ const userSchema = new mongoose.Schema({
   firstName: {
     type: String,
     required: [true, 'First name is required'],
-    trim: true
+    trim: true,
+    match: [/^[a-zA-Z]+$/, 'First name must only contain letters']
+  },
+  middleName: {
+    type: String,
+    trim: true,
+    match: [/^[a-zA-Z]*$/, 'Middle name must only contain letters'] // Changed + to * to allow empty middle name
   },
   lastName: {
     type: String,
     required: [true, 'Last name is required'],
-    trim: true
+    trim: true,
+    match: [/^[a-zA-Z]+$/, 'Last name must only contain letters']
   },
   email: {
     type: String,
@@ -29,7 +36,8 @@ const userSchema = new mongoose.Schema({
     trim: true,
     validate: {
       validator: function(v) {
-        return /^[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}$/.test(v);
+        // Improved email regex
+        return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(v);
       },
       message: props => `${props.value} is not a valid email address!`
     }
@@ -37,17 +45,18 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: [true, 'Password is required'],
-    minlength: [8, 'Password must be at least 8 characters'],
-    select: false // Don't return password in queries by default
+    // Removed redundant minlength since the regex already enforces it
+    select: false,
+    match: [/^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/, 'Password must contain at least one uppercase letter, one number, and one special character']
   },
   role: {
     type: String,
-    enum: ['admin', 'hod', 'proctor', 'faculty', 'student'],
+    enum: ['admin', 'hod', 'proctor', 'faculty', 'student', 'studentGuardian'],
     required: true
   },
   mfaSecret: {
     type: String,
-    select: false // Don't return MFA secret in queries by default
+    select: false
   },
   lastLogin: {
     type: Date
@@ -89,17 +98,17 @@ const userSchema = new mongoose.Schema({
     default: {}
   }
 }, {
-  timestamps: true, // Automatically adds createdAt and updatedAt
+  timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// Add index for role and status
+// Index for role and status
 userSchema.index({ role: 1, status: 1 });
 
-// Virtual for full name
-userSchema.virtual('fullName').get(function() {
-  return `${this.firstName} ${this.lastName}`;
+// Virtual field for full name
+userSchema.virtual('fullName').get(function () {
+  return `${this.firstName} ${this.middleName || ''} ${this.lastName}`.trim();
 });
 
 // Encrypt password before saving
@@ -112,7 +121,8 @@ userSchema.pre('save', async function(next) {
     this.password = await bcrypt.hash(this.password, salt);
     next();
   } catch (error) {
-    next(error);
+    // Properly pass error to next middleware
+    return next(error);
   }
 });
 
@@ -123,6 +133,7 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 
 // Method to generate password reset token
 userSchema.methods.createPasswordResetToken = function() {
+  // Generate a more secure token using crypto.randomBytes
   const resetToken = crypto.randomBytes(32).toString('hex');
   
   this.resetPasswordToken = crypto
@@ -152,17 +163,38 @@ userSchema.methods.createVerificationToken = function() {
 };
 
 // Method to handle failed login attempts
-userSchema.methods.incrementLoginAttempts = function() {
+userSchema.methods.incrementLoginAttempts = async function() {
   this.failedLoginAttempts += 1;
-  return this.save();
+  return await this.save();
 };
 
-// Method to reset failed login attempts
-userSchema.methods.resetLoginAttempts = function() {
+userSchema.methods.resetLoginAttempts = async function() {
   this.failedLoginAttempts = 0;
-  return this.save();
+  return await this.save();
+};
+
+// Role-based Permissions Mapping
+const rolesPermissions = {
+  admin: ['create', 'update', 'delete', 'view'],     // Admin has full permissions
+  faculty: ['create', 'view'],                        // Faculty can create and view
+  student: ['view'],                                  // Student can only view
+  studentGuardian: ['view'],                          // Student Guardian can only view
+  hod: ['create', 'update', 'view'],                  // HOD can create, update, and view
+  proctor: ['view']                                   // Proctor can only view
+};
+
+// Method to check if the user has a specific permission
+userSchema.methods.isAuthorized = function(action) {
+  const permissions = rolesPermissions[this.role];
+  
+  if (permissions && permissions.includes(action)) {
+    return true;
+  }
+  
+  return false;
 };
 
 const User = mongoose.model('User', userSchema);
 
-module.exports = User;
+// Switch to ES modules export
+export default User;

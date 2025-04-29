@@ -45,11 +45,19 @@ adminSchema.virtual('adminInfo').get(function() {
   return null;
 });
 
-// Method to check if this admin has specific permissions
-adminSchema.methods.hasAccess = function(requiredAccess) {
-  if (this.accessLevel === 'full') return true;
-  return this.accessLevel === requiredAccess;
+adminSchema.methods.hasAccessTo = function (moduleName) {
+  const accessMap = {
+    full: ['academic', 'finance', 'hr', 'limited'],
+    academic: ['academic'],
+    finance: ['finance'],
+    hr: ['hr'],
+    limited: []
+  };
+
+  return accessMap[this.accessLevel]?.includes(moduleName) || this.accessLevel === 'full';
 };
+
+
 
 const Admin = mongoose.model('Admin', adminSchema);
 
