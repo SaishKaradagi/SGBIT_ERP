@@ -1,3 +1,4 @@
+// user.model.js
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
@@ -162,13 +163,8 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
-    department: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Department",
-      required: function () {
-        return ["hod", "faculty", "student", "proctor"].includes(this.role);
-      },
-    },
+    // Note: department field moved to respective role-specific models
+
     // Account Status
     status: {
       type: String,
@@ -261,84 +257,9 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    gender: {
-      type: String,
-      enum: {
-        values: ["male", "female", "other", "preferNotToSay"],
-        message: "{VALUE} is not a valid gender",
-      },
-    },
-    dateOfBirth: {
-      type: Date,
-      validate: {
-        validator: function (v) {
-          if (!v) return true; // Allow empty
-          // Ensure person is between 5 and 100 years old
-          const now = new Date();
-          const fiveYearsAgo = new Date(
-            now.getFullYear() - 5,
-            now.getMonth(),
-            now.getDate(),
-          );
-          const hundredYearsAgo = new Date(
-            now.getFullYear() - 100,
-            now.getMonth(),
-            now.getDate(),
-          );
-          return v <= fiveYearsAgo && v >= hundredYearsAgo;
-        },
-        message: "Date of birth must be within a valid range (5-100 years old)",
-      },
-    },
-    address: {
-      street: String,
-      city: String,
-      state: String,
-      pincode: {
-        type: String,
-        validate: {
-          validator: function (v) {
-            if (!v) return true; // Allow empty
-            // Indian PIN code validation (6 digits)
-            return /^\d{6}$/.test(v);
-          },
-          message: (props) => `${props.value} is not a valid Indian PIN code!`,
-        },
-      },
-      country: {
-        type: String,
-        default: "India",
-      },
-    },
-    // Indian-specific fields
-    aadharNumber: {
-      type: String,
-      trim: true,
-      select: false, // Hide by default due to sensitivity
-      validate: {
-        validator: function (v) {
-          if (!v) return true; // Allow empty
-          // Validate Aadhar number (12 digits)
-          return /^\d{12}$/.test(v);
-        },
-        message: (props) => `${props.value} is not a valid Aadhar number!`,
-      },
-    },
-    panNumber: {
-      type: String,
-      trim: true,
-      uppercase: true,
-      select: false, // Hide by default due to sensitivity
-      validate: {
-        validator: function (v) {
-          if (!v) return true; // Allow empty
-          // Validate PAN number format (AAAAA9999A)
-          return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(v);
-        },
-        message: (props) => `${props.value} is not a valid PAN number!`,
-      },
-    },
-    // Additional Data
+    // Note: role-specific fields like gender and dateOfBirth moved to respective models
+
+    // User Preferences
     preferences: {
       type: mongoose.Schema.Types.Mixed,
       default: {
@@ -375,8 +296,6 @@ const userSchema = new mongoose.Schema(
 // Indexes for better performance
 userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ role: 1, status: 1 });
-userSchema.index({ department: 1, role: 1 });
-userSchema.index({ "address.pincode": 1 });
 userSchema.index({ createdAt: 1 });
 
 // Virtuals
@@ -393,24 +312,6 @@ userSchema.virtual("displayName").get(function () {
 
 userSchema.virtual("initials").get(function () {
   return (this.firstName.charAt(0) + this.lastName.charAt(0)).toUpperCase();
-});
-
-userSchema.virtual("age").get(function () {
-  if (!this.dateOfBirth) return null;
-
-  const today = new Date();
-  const birthDate = new Date(this.dateOfBirth);
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-
-  if (
-    monthDiff < 0 ||
-    (monthDiff === 0 && today.getDate() < birthDate.getDate())
-  ) {
-    age--;
-  }
-
-  return age;
 });
 
 // Reference to related models based on role

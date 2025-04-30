@@ -1,64 +1,70 @@
-const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');
+import mongoose from "mongoose";
+import { v4 as uuidv4 } from "uuid";
 
-const adminSchema = new mongoose.Schema({
-  uuid: {
-    type: String,
-    default: () => uuidv4(),
-    unique: true,
-    required: true,
-    immutable: true
+/**
+ * Admin Schema for ERP Portal (India College Context)
+ * Only for users with admin-like roles.
+ */
+const adminSchema = new mongoose.Schema(
+  {
+    uuid: {
+      type: String,
+      default: () => uuidv4(),
+      unique: true,
+      required: true,
+      immutable: true,
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: [true, "User reference is required"],
+      unique: true,
+      index: true,
+    },
+    designation: {
+      type: String,
+      required: [true, "Designation is required"],
+      trim: true,
+      minlength: [2, "Designation must be at least 2 characters"],
+      maxlength: [100, "Designation must be at most 100 characters"],
+      match: [
+        /^[A-Za-z\s.]+$/,
+        "Designation must only contain letters, spaces, and periods",
+      ],
+    },
+    // Optionally: add fields like department, officePhone, etc. if needed in future
   },
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    unique: true
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   },
-  designation: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  // Optional addition - permissions field
-  accessLevel: {
-    type: String,
-    enum: ['full', 'academic', 'finance', 'hr', 'limited'],
-    default: 'limited'
-  }
-}, {
-  timestamps: true
-});
+);
 
-// Create index on user reference for faster lookups
+// Index for fast lookup
 adminSchema.index({ user: 1 });
 
-// Virtual to get admin's name and email via populated user
-adminSchema.virtual('adminInfo').get(function() {
-  if (this.populated('user')) {
+/**
+ * Virtual: adminInfo
+ * Returns admin's name, email, and role if user is populated.
+ */
+adminSchema.virtual("adminInfo").get(function () {
+  if (
+    this.user &&
+    typeof this.user === "object" &&
+    this.user.fullName &&
+    this.user.email &&
+    this.user.role
+  ) {
     return {
       name: this.user.fullName,
       email: this.user.email,
-      role: this.user.role
+      role: this.user.role,
     };
   }
   return null;
 });
 
-adminSchema.methods.hasAccessTo = function (moduleName) {
-  const accessMap = {
-    full: ['academic', 'finance', 'hr', 'limited'],
-    academic: ['academic'],
-    finance: ['finance'],
-    hr: ['hr'],
-    limited: []
-  };
+const Admin = mongoose.model("Admin", adminSchema);
 
-  return accessMap[this.accessLevel]?.includes(moduleName) || this.accessLevel === 'full';
-};
-
-
-
-const Admin = mongoose.model('Admin', adminSchema);
-
-module.exports = Admin;
+export default Admin;
