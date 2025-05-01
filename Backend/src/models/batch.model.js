@@ -11,16 +11,8 @@ const batchSchema = new mongoose.Schema(
       immutable: true,
       index: true, // Added index for faster lookups by UUID
     },
-    name: {
-      type: String,
-      required: [true, "Batch name is required"],
-      trim: true,
-      maxlength: [50, "Batch name cannot exceed 50 characters"],
-      minlength: [2, "Batch name must be at least 2 characters long"],
-    },
     code: {
       type: String,
-      required: [true, "Batch code is required"],
       trim: true,
       uppercase: true,
       unique: true,
@@ -109,22 +101,6 @@ const batchSchema = new mongoose.Schema(
       max: [1000, "Capacity cannot exceed 1000"],
       default: 60,
     },
-    coordinators: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Faculty",
-      },
-    ],
-    description: {
-      type: String,
-      trim: true,
-      maxlength: [500, "Description cannot exceed 500 characters"],
-    },
-    isActive: {
-      type: Boolean,
-      default: true,
-      index: true,
-    },
   },
   {
     timestamps: true,
@@ -135,7 +111,7 @@ const batchSchema = new mongoose.Schema(
 
 // Indexes for optimized queries
 batchSchema.index({ academicYear: 1 });
-batchSchema.index({ name: 1, department: 1 }, { unique: true }); // Unique constraint for batch name within a department
+batchSchema.index({ department: 1 }, { unique: true }); // Unique constraint for batch name within a department
 batchSchema.index({ startDate: 1, endDate: 1 }); // For date range queries
 
 // Virtual to calculate duration in months
@@ -175,7 +151,7 @@ batchSchema.virtual("students", {
 
 // Static method to find batches by department
 batchSchema.statics.findByDepartment = function (departmentId) {
-  return this.find({ department: departmentId, isActive: true }).sort({
+  return this.find({ department: departmentId, status: { $ne: "CANCELLED" } }).sort({
     startDate: -1,
   });
 };
@@ -186,7 +162,6 @@ batchSchema.statics.findActiveBatches = function () {
   return this.find({
     startDate: { $lte: now },
     endDate: { $gte: now },
-    isActive: true,
     status: "ACTIVE",
   }).populate("department", "name code");
 };
@@ -197,7 +172,6 @@ batchSchema.methods.isCurrentlyActive = function () {
   return (
     this.startDate <= now &&
     now <= this.endDate &&
-    this.isActive &&
     this.status === "ACTIVE"
   );
 };

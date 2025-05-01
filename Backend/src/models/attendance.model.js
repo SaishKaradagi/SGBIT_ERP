@@ -43,43 +43,9 @@ const attendanceSchema = new mongoose.Schema(
       ref: "Faculty",
       required: [true, "Faculty ID who marked attendance is required"],
     },
-    sessionId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "TimeTable",
-      required: false,
-      index: true,
-    },
-    remarks: {
-      type: String,
-      trim: true,
-      maxlength: [500, "Remarks cannot exceed 500 characters"],
-    },
     lastModifiedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-    },
-    isLocked: {
-      type: Boolean,
-      default: false,
-    },
-    lockDate: {
-      type: Date,
-    },
-    lockedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    deviceInfo: {
-      type: String,
-      trim: true,
-    },
-    ipAddress: {
-      type: String,
-      trim: true,
-    },
-    location: {
-      type: String,
-      trim: true,
     },
     isEdited: {
       type: Boolean,
@@ -115,7 +81,7 @@ const attendanceSchema = new mongoose.Schema(
 
 // Unique constraint to prevent duplicate attendance records
 attendanceSchema.index(
-  { studentId: 1, courseId: 1, date: 1, sessionId: 1 },
+  { studentId: 1, courseId: 1, date: 1},
   { unique: true, partialFilterExpression: { sessionId: { $exists: true } } },
 );
 
@@ -161,24 +127,19 @@ attendanceSchema.virtual("course", {
 
 // Basic model methods (moved complex business logic to service)
 attendanceSchema.methods.changeStatus = function (newStatusId, userId, reason) {
-  this._previousStatus = this.attendanceStatusTypeId;
+  // Store previous status in edit history
+  const historyEntry = {
+    previousStatus: this.attendanceStatusTypeId,
+    modifiedBy: userId,
+    modifiedAt: new Date(),
+    reason: reason || "Status changed",
+  };
+  
   this.attendanceStatusTypeId = newStatusId;
   this.lastModifiedBy = userId;
-  this._editReason = reason;
-  return this;
-};
-
-attendanceSchema.methods.lock = function (userId) {
-  this.isLocked = true;
-  this.lockDate = new Date();
-  this.lockedBy = userId;
-  return this;
-};
-
-attendanceSchema.methods.unlock = function () {
-  this.isLocked = false;
-  this.lockDate = null;
-  this.lockedBy = null;
+  this.isEdited = true;
+  this.editHistory.push(historyEntry);
+  
   return this;
 };
 

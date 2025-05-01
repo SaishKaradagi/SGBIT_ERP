@@ -12,16 +12,6 @@ export const ADDRESS_TYPES = Object.freeze({
   CORRESPONDENCE: "correspondence",
 });
 
-/**
- * @description Constants for user types in college context
- * @enum {string}
- */
-export const USER_TYPES = Object.freeze({
-  STUDENT: "student",
-  FACULTY: "faculty",
-  STAFF: "staff",
-  ADMIN: "admin",
-});
 
 /**
  * @description Validation helper for alphanumeric text with spaces and basic punctuation
@@ -65,12 +55,6 @@ const addressSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "User reference is required"],
-      index: true,
-    },
-    userType: {
-      type: String,
-      enum: Object.values(USER_TYPES),
-      required: [true, "User type is required"],
       index: true,
     },
     addressType: {
@@ -172,81 +156,6 @@ const addressSchema = new mongoose.Schema(
         return v.replace(/\D/g, "");
       },
     },
-    phoneNumber: {
-      type: String,
-      trim: true,
-      validate: {
-        validator: function (v) {
-          if (!v) return true; // Optional field
-
-          // Clean the input - remove spaces, dashes, etc.
-          const cleanPhone = v.replace(/\D/g, "");
-
-          // Indian phone number validation (10 digits, optional +91 prefix)
-          // Mobile numbers in India start with 6, 7, 8, or 9
-          if (cleanPhone.length === 10) {
-            return /^[6-9][0-9]{9}$/.test(cleanPhone);
-          } else if (cleanPhone.length === 12 && cleanPhone.startsWith("91")) {
-            return /^91[6-9][0-9]{9}$/.test(cleanPhone);
-          }
-          return false;
-        },
-        message:
-          "Please enter a valid Indian mobile number (10 digits starting with 6-9, with optional +91 prefix)",
-      },
-      set: function (v) {
-        if (!v) return "";
-        // Standardize format: store as 10 digits without country code
-        const cleaned = v.replace(/\D/g, "");
-        if (cleaned.length === 12 && cleaned.startsWith("91")) {
-          return cleaned.substring(2);
-        }
-        return cleaned;
-      },
-    },
-    alternatePhoneNumber: {
-      type: String,
-      trim: true,
-      validate: {
-        validator: function (v) {
-          if (!v) return true; // Optional field
-
-          // Clean the input - remove spaces, dashes, etc.
-          const cleanPhone = v.replace(/\D/g, "");
-
-          // Indian phone number validation (10 digits, optional +91 prefix)
-          // Mobile numbers in India start with 6, 7, 8, or 9
-          if (cleanPhone.length === 10) {
-            return /^[6-9][0-9]{9}$/.test(cleanPhone);
-          } else if (cleanPhone.length === 12 && cleanPhone.startsWith("91")) {
-            return /^91[6-9][0-9]{9}$/.test(cleanPhone);
-          }
-          return false;
-        },
-        message:
-          "Please enter a valid Indian mobile number (10 digits starting with 6-9, with optional +91 prefix)",
-      },
-      set: function (v) {
-        if (!v) return "";
-        // Standardize format: store as 10 digits without country code
-        const cleaned = v.replace(/\D/g, "");
-        if (cleaned.length === 12 && cleaned.startsWith("91")) {
-          return cleaned.substring(2);
-        }
-        return cleaned;
-      },
-    },
-    // Optional geocoding support for mapping/location services
-    latitude: {
-      type: Number,
-      min: [-90, "Latitude must be between -90 and 90 degrees"],
-      max: [90, "Latitude must be between -90 and 90 degrees"],
-    },
-    longitude: {
-      type: Number,
-      min: [-180, "Longitude must be between -180 and 180 degrees"],
-      max: [180, "Longitude must be between -180 and 180 degrees"],
-    },
     isDefaultForType: {
       type: Boolean,
       default: false,
@@ -261,34 +170,6 @@ const addressSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
       index: true,
-    },
-    verificationDate: {
-      type: Date,
-    },
-    verificationMethod: {
-      type: String,
-      enum: ["document", "physical", "OTP", "email", "other"],
-    },
-    verificationNotes: {
-      type: String,
-      maxlength: [500, "Verification notes cannot exceed 500 characters"],
-    },
-    verifiedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    lastUsed: {
-      type: Date,
-      default: Date.now,
-    },
-    // Audit trail fields
-    updatedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    updateNotes: {
-      type: String,
-      maxlength: [500, "Update notes cannot exceed 500 characters"],
     },
   },
   {
@@ -346,30 +227,6 @@ addressSchema.path("isDefaultForType").validate(async function (value) {
   }
 }, "User already has a default address for this address type");
 
-// Validation to ensure phone numbers are unique when present
-addressSchema.path("phoneNumber").validate(async function (value) {
-  if (!value) return true; // Skip validation if not provided
-
-  try {
-    // Check if this phone number is used by any other active address
-    const count = await this.constructor.countDocuments({
-      phoneNumber: value,
-      user: { $ne: this.user }, // Exclude current user
-      _id: { $ne: this._id }, // Exclude current address
-      isActive: true,
-    });
-
-    if (count > 0) {
-      return false; // Phone number is already in use
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Phone validation error:", error);
-    return false;
-  }
-}, "This phone number is already registered with another user");
-
 // Virtual for user details
 addressSchema.virtual("userDetails", {
   ref: "User",
@@ -387,7 +244,6 @@ addressSchema.index(
     partialFilterExpression: { isDefaultForType: true, isActive: true },
   },
 );
-addressSchema.index({ userType: 1, isActive: 1 });
 addressSchema.index({ pinCode: 1 });
 addressSchema.index({ city: 1, state: 1 });
 
@@ -425,14 +281,6 @@ addressSchema.pre("save", async function (next) {
       if (count === 0) {
         this.isDefaultForType = true;
       }
-    }
-
-    // Update lastUsed timestamp when saving address
-    this.lastUsed = new Date();
-
-    // Store verification date when address is verified
-    if (this.isVerified && this.isModified("isVerified")) {
-      this.verificationDate = new Date();
     }
 
     // If setting an address to inactive and it's a default, we need to handle that
@@ -511,7 +359,7 @@ addressSchema.statics.getUserAddresses = async function (userId) {
   return this.find({
     user: userId,
     isActive: true,
-  }).sort({ isDefaultForType: -1, lastUsed: -1 });
+  }).sort({ isDefaultForType: -1 });
 };
 
 /**
@@ -520,7 +368,6 @@ addressSchema.statics.getUserAddresses = async function (userId) {
 addressSchema.statics.softDelete = async function (
   addressId,
   userId,
-  deletedBy = null,
 ) {
   const address = await this.findOne({ _id: addressId, user: userId });
 
@@ -538,12 +385,6 @@ addressSchema.statics.softDelete = async function (
   address.isActive = false;
   address.isDefaultForType = false;
 
-  // Record who made the deletion if provided
-  if (deletedBy) {
-    address.updatedBy = deletedBy;
-    address.updateNotes = "Address marked as deleted";
-  }
-
   await address.save();
 
   // If this was a default address, set another address as default if available
@@ -552,7 +393,7 @@ addressSchema.statics.softDelete = async function (
       user: userId,
       addressType: addressType,
       isActive: true,
-    }).sort({ lastUsed: -1 });
+    });
 
     if (newDefaultCandidate) {
       newDefaultCandidate.isDefaultForType = true;
@@ -567,114 +408,7 @@ addressSchema.statics.softDelete = async function (
   return { deletedAddress: address };
 };
 
-/**
- * Static method to verify an address
- */
-addressSchema.statics.verifyAddress = async function (
-  addressId,
-  verifiedBy,
-  method = "document",
-  notes = "",
-) {
-  const address = await this.findById(addressId);
-
-  if (!address) {
-    throw new Error("Address not found");
-  }
-
-  address.isVerified = true;
-  address.verificationDate = new Date();
-  address.verifiedBy = verifiedBy;
-  address.verificationMethod = method;
-  address.verificationNotes = notes;
-
-  return address.save();
-};
-
-/**
- * Static method to get unverified addresses
- */
-addressSchema.statics.getUnverifiedAddresses = async function (options = {}) {
-  const query = {
-    isActive: true,
-    isVerified: false,
-  };
-
-  // Add filters if provided
-  if (options.userType) query.userType = options.userType;
-  if (options.addressType) query.addressType = options.addressType;
-
-  return this.find(query)
-    .populate("user", "name rollNumber email")
-    .sort(options.sort || { createdAt: -1 })
-    .limit(options.limit || 100);
-};
-
-/**
- * Static method to find similar addresses (for duplicate detection)
- */
-addressSchema.statics.findSimilarAddresses = async function (addressData) {
-  // Extract key fields for comparison
-  const { city, pinCode, addressLine1 } = addressData;
-
-  if (!city || !pinCode) {
-    throw new Error(
-      "City and PIN code are required for finding similar addresses",
-    );
-  }
-
-  // Build a query to find potentially similar addresses
-  const query = {
-    city: new RegExp(city, "i"), // Case-insensitive city match
-    pinCode: pinCode,
-    isActive: true,
-  };
-
-  if (addressLine1) {
-    // Use MongoDB text search for address line
-    query.$text = { $search: addressLine1 };
-  }
-
-  return this.find(query)
-    .select(
-      "user addressType addressLine1 addressLine2 city state pinCode isVerified",
-    )
-    .populate("user", "name email")
-    .limit(5);
-};
-
-/**
- * Static method to get address statistics by region
- */
-addressSchema.statics.getAddressStatsByRegion = async function () {
-  return this.aggregate([
-    { $match: { isActive: true } },
-    {
-      $group: {
-        _id: { state: "$state", city: "$city" },
-        count: { $sum: 1 },
-        verifiedCount: {
-          $sum: { $cond: [{ $eq: ["$isVerified", true] }, 1, 0] },
-        },
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        state: "$_id.state",
-        city: "$_id.city",
-        count: 1,
-        verifiedCount: 1,
-        verificationRate: {
-          $multiply: [{ $divide: ["$verifiedCount", "$count"] }, 100],
-        },
-      },
-    },
-    { $sort: { count: -1 } },
-  ]);
-};
-
 const Address = mongoose.model("Address", addressSchema);
 
 // Export model and constants
-export { Address, addressSchema, ADDRESS_TYPES, USER_TYPES };
+export { Address, addressSchema, ADDRESS_TYPES};

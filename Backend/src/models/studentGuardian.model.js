@@ -83,38 +83,7 @@ const studentGuardianSchema = new mongoose.Schema(
       type: Number,
       min: [0, "Income cannot be negative"],
     },
-    // Contact information (encrypted)
-    phoneNumber: {
-      type: String,
-      required: [true, "Phone number is required"],
-      set: encrypt, // Encrypt before saving
-      get: decrypt, // Decrypt when retrieving
-      validate: {
-        validator: function (v) {
-          if (!v) return true;
-          const decryptedPhone = decrypt(v);
-          // Indian phone number validation
-          return /^(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}$/.test(decryptedPhone);
-        },
-        message: (props) =>
-          `${decrypt(props.value)} is not a valid Indian phone number!`,
-      },
-    },
-    alternatePhone: {
-      type: String,
-      set: encrypt, // Encrypt before saving
-      get: decrypt, // Decrypt when retrieving
-      validate: {
-        validator: function (v) {
-          if (!v) return true;
-          const decryptedPhone = decrypt(v);
-          // Indian phone number validation
-          return /^(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}$/.test(decryptedPhone);
-        },
-        message: (props) =>
-          `${decrypt(props.value)} is not a valid Indian phone number!`,
-      },
-    },
+    
     email: {
       type: String,
       set: encrypt, // Encrypt before saving
@@ -130,24 +99,8 @@ const studentGuardianSchema = new mongoose.Schema(
     },
     // Address information
     address: {
-      street: String,
-      city: String,
-      state: String,
-      pincode: {
-        type: String,
-        validate: {
-          validator: function (v) {
-            if (!v) return true; // Allow empty
-            // Indian PIN code validation (6 digits)
-            return /^\d{6}$/.test(v);
-          },
-          message: (props) => `${props.value} is not a valid Indian PIN code!`,
-        },
-      },
-      country: {
-        type: String,
-        default: "India",
-      },
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Address",
     },
     // User account reference (if guardian also has an account)
     user: {
@@ -171,7 +124,6 @@ const studentGuardianSchema = new mongoose.Schema(
 // Indexing for performance
 studentGuardianSchema.index({ student: 1, relationship: 1 });
 studentGuardianSchema.index({ user: 1 });
-studentGuardianSchema.index({ "address.pincode": 1 });
 
 // Static method to find guardians for a student
 studentGuardianSchema.statics.findByStudent = function (studentId) {

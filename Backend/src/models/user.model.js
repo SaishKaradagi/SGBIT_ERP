@@ -86,19 +86,6 @@ const userSchema = new mongoose.Schema(
           `${props.value} is not a valid Indian phone number!`,
       },
     },
-    whatsappNumber: {
-      type: String,
-      trim: true,
-      validate: {
-        validator: function (v) {
-          if (!v) return true; // Allow empty
-          // Indian phone number validation (10 digits, optionally with +91 prefix)
-          return /^(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}$/.test(v);
-        },
-        message: (props) =>
-          `${props.value} is not a valid Indian WhatsApp number!`,
-      },
-    },
     // Authentication
     password: {
       type: String,
@@ -131,11 +118,50 @@ const userSchema = new mongoose.Schema(
       validate: [
         {
           validator: function (v) {
-            return v.length <= 5; // Keep only last 5 password hashes
+            return v.length <= 3; // Keep only last 5 password hashes
           },
           message: "Too many password history entries",
         },
       ],
+    },
+    dob: {
+      type: Date,
+      required: [true, "Date of birth is required"],
+      validate: {
+        validator: function (date) {
+          const now = new Date();
+          const fiveYearsAgo = new Date(
+            now.getFullYear() - 5,
+            now.getMonth(),
+            now.getDate(),
+          );
+          const hundredYearsAgo = new Date(
+            now.getFullYear() - 100,
+            now.getMonth(),
+            now.getDate(),
+          );
+          return date <= fiveYearsAgo && date >= hundredYearsAgo;
+        },
+        message: "Date of birth must be within a valid range (5-100 years old)",
+      },
+    },
+    gender: {
+      type: String,
+      enum: {
+        values: ["male", "female", "other", "preferNotToSay"],
+        message: "{VALUE} is not a valid gender",
+      },
+      required: [true, "Gender is required"],
+    },
+    bloodGroup: {
+      type: String,
+      trim: true,
+      maxlength: [5, "Blood group cannot exceed 5 characters"],
+    },
+    category: {
+      type: String,
+      trim: true,
+      maxlength: [50, "Category cannot exceed 50 characters"],
     },
     // Authorization
     role: {
@@ -183,11 +209,6 @@ const userSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
-    statusReason: {
-      type: String,
-      trim: true,
-      maxlength: [200, "Status reason cannot exceed 200 characters"],
-    },
     isEmailVerified: {
       type: Boolean,
       default: false,
@@ -195,20 +216,6 @@ const userSchema = new mongoose.Schema(
     isPhoneVerified: {
       type: Boolean,
       default: false,
-    },
-    // Multi-Factor Authentication
-    mfaEnabled: {
-      type: Boolean,
-      default: false,
-    },
-    mfaSecret: {
-      type: String,
-      select: false,
-    },
-    mfaMethod: {
-      type: String,
-      enum: ["app", "sms", "email", null],
-      default: null,
     },
     // Session Management
     lastLogin: {
@@ -218,31 +225,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    refreshToken: {
-      type: String,
-      select: false,
-    },
-    refreshTokenExpiry: {
-      type: Date,
-      select: false,
-    },
     // Account Verification & Recovery
-    verificationToken: {
-      type: String,
-      select: false,
-    },
-    verificationTokenExpiry: {
-      type: Date,
-      select: false,
-    },
-    resetPasswordToken: {
-      type: String,
-      select: false,
-    },
-    resetPasswordExpires: {
-      type: Date,
-      select: false,
-    },
     // Security
     failedLoginAttempts: {
       type: Number,
@@ -257,33 +240,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    // Note: role-specific fields like gender and dateOfBirth moved to respective models
-
     // User Preferences
-    preferences: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {
-        theme: "light",
-        language: "en",
-        notifications: {
-          email: true,
-          sms: false,
-          app: true,
-        },
-      },
-    },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: {},
-    },
-    // Audit fields
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    updatedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
     },
   },
   {
@@ -296,7 +256,6 @@ const userSchema = new mongoose.Schema(
 // Indexes for better performance
 userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ role: 1, status: 1 });
-userSchema.index({ createdAt: 1 });
 
 // Virtuals
 userSchema.virtual("fullName").get(function () {
@@ -304,6 +263,12 @@ userSchema.virtual("fullName").get(function () {
     return `${this.firstName} ${this.middleName} ${this.lastName}`.trim();
   }
   return `${this.firstName} ${this.lastName}`.trim();
+});
+
+userSchema.virtual("age").get(function () {
+  if (!this.dob) return null;
+  const diff = Date.now() - this.dob.getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25)); // Convert milliseconds to years
 });
 
 userSchema.virtual("displayName").get(function () {
@@ -314,62 +279,11 @@ userSchema.virtual("initials").get(function () {
   return (this.firstName.charAt(0) + this.lastName.charAt(0)).toUpperCase();
 });
 
-// Reference to related models based on role
-userSchema.virtual("studentInfo", {
-  ref: "Student",
-  localField: "_id",
-  foreignField: "user",
-  justOne: true,
-});
-
-userSchema.virtual("facultyInfo", {
-  ref: "Faculty",
-  localField: "_id",
-  foreignField: "user",
-  justOne: true,
-});
-
-userSchema.virtual("guardianInfo", {
-  ref: "Guardian",
-  localField: "_id",
-  foreignField: "user",
-  justOne: true,
-});
-
 // Instance methods (focused only on data operations, not business logic)
 
 // Password comparison - basic functionality needed for the model
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
-};
-
-// Token generation - basic functionality needed for the model
-userSchema.methods.createPasswordResetToken = function () {
-  const resetToken = crypto.randomBytes(32).toString("hex");
-
-  this.resetPasswordToken = crypto
-    .createHash("sha256")
-    .update(resetToken)
-    .digest("hex");
-
-  // Set expiry to 15 minutes
-  this.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
-
-  return resetToken;
-};
-
-userSchema.methods.createVerificationToken = function () {
-  const verificationToken = crypto.randomBytes(32).toString("hex");
-
-  this.verificationToken = crypto
-    .createHash("sha256")
-    .update(verificationToken)
-    .digest("hex");
-
-  // Set expiry to 24 hours
-  this.verificationTokenExpiry = Date.now() + 24 * 60 * 60 * 1000;
-
-  return verificationToken;
 };
 
 // Check if password was changed after a JWT was issued - needed for auth middleware

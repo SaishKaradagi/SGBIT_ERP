@@ -30,7 +30,6 @@ const semesterSchema = new mongoose.Schema(
         message: "Semester number must be an integer",
       },
     },
-
     startDate: {
       type: Date,
       required: [true, "Start date is required"],
@@ -56,17 +55,16 @@ const semesterSchema = new mongoose.Schema(
   },
 );
 
-// Indexing for Efficient Queries
+// Valid Indexes
 semesterSchema.index({ academicYear: 1, term: 1 });
-semesterSchema.index({ programme: 1 });
 semesterSchema.index({ status: 1 });
 
-// Static Method to Find Current Semesters
+// Static Method (cleaned)
 semesterSchema.statics.findCurrent = function () {
-  return this.find({ status: "current" }).populate("programme", "code name");
+  return this.find({ status: "current" });
 };
 
-// Virtual Property to Get Semester Name
+// Virtual Property
 semesterSchema.virtual("semesterName").get(function () {
   return `${this.academicYear} - ${this.term} (Semester ${this.number})`;
 });

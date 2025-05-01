@@ -17,7 +17,7 @@ const adminSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: [true, "User reference is required"],
+      required: [true, "User reference is always required"],
       unique: true,
       index: true,
     },

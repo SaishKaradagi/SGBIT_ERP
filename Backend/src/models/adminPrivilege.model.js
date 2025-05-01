@@ -10,7 +10,7 @@ const adminPrivilegeSchema = new mongoose.Schema(
     admin: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Admin",
-      required: [true, "Admin reference is required"],
+      required: [true, "Admin reference is always required"],
       index: true,
     },
     privilege: {

@@ -130,44 +130,6 @@ const noticeSchema = new mongoose.Schema({
     type: Schema.Types.ObjectId,
     ref: 'Programme'  // Target specific programmes
   }],
-  readBy: [{
-    user: {
-      type: Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    readAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  acknowledgementRequired: {
-    type: Boolean,
-    default: false
-  },
-  acknowledgedBy: [{
-    user: {
-      type: Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    acknowledgedAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  tags: [{
-    type: String,
-    trim: true
-  }],
-  postedFor: {
-    type: String,
-    enum: ['COLLEGE', 'UNIVERSITY', 'GOVERNMENT'],
-    default: 'COLLEGE'
-  },
-  referenceNumber: {  // For official notices, circulars etc.
-    type: String,
-    trim: true,
-    index: true
-  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -183,15 +145,11 @@ noticeSchema.index({ isImportant: 1, status: 1, publishDate: -1 });
 // Text index for full text search capabilities
 noticeSchema.index({ 
   title: 'text', 
-  content: 'text', 
-  tags: 'text', 
-  referenceNumber: 'text' 
+  content: 'text'
 }, {
   weights: {
     title: 5,
-    content: 3,
-    tags: 2,
-    referenceNumber: 4
+    content: 3
   },
   name: 'notice_text_index'
 });
@@ -231,15 +189,6 @@ noticeSchema.virtual('age').get(function() {
   }
 });
 
-// Virtuals for audience counts
-noticeSchema.virtual('readCount').get(function() {
-  return this.readBy ? this.readBy.length : 0;
-});
-
-noticeSchema.virtual('acknowledgeCount').get(function() {
-  return this.acknowledgedBy ? this.acknowledgedBy.length : 0;
-});
-
 // Virtual to check if notice is expired
 noticeSchema.virtual('isExpired').get(function() {
   if (!this.expiryDate) return false;
@@ -252,31 +201,6 @@ noticeSchema.methods = {
   getContentSnippet: function(length = 100) {
     if (!this.content || this.content.length <= length) return this.content || '';
     return this.content.substring(0, length) + '...';
-  },
-
-  // Mark notice as read by a user
-  markAsRead: async function(userId) {
-    if (!this.readBy.some(item => item.user.toString() === userId.toString())) {
-      this.readBy.push({
-        user: userId,
-        readAt: new Date()
-      });
-      await this.save();
-    }
-    return this;
-  },
-
-  // Acknowledge notice by a user
-  acknowledgeNotice: async function(userId) {
-    if (this.acknowledgementRequired && 
-        !this.acknowledgedBy.some(item => item.user.toString() === userId.toString())) {
-      this.acknowledgedBy.push({
-        user: userId,
-        acknowledgedAt: new Date()
-      });
-      await this.save();
-    }
-    return this;
   },
 
   // Check if notice is accessible to a specific user
@@ -592,16 +516,6 @@ noticeSchema.statics = {
     .populate('author', 'firstName lastName');
   },
   
-  // Find notices by reference number (for official notices)
-  async findByReferenceNumber(referenceNumber) {
-    return this.findOne({ 
-      referenceNumber,
-      status: 'PUBLISHED'
-    })
-    .populate('author', 'firstName lastName')
-    .populate('department', 'name code');
-  },
-  
   // Get notice statistics grouped by type
   async getStatistics() {
     return this.aggregate([
@@ -674,80 +588,8 @@ noticeSchema.statics = {
       },
       { $sort: { date: 1 } }
     ]);
-  },
-  
-  // Generate notice analytics
-  async generateAnalytics(noticeId) {
-    const notice = await this.findById(noticeId);
-    if (!notice) return null;
-    
-    const readCount = notice.readBy.length;
-    const acknowledgeCount = notice.acknowledgedBy.length;
-    
-    // Calculate read percentage if audience count can be determined
-    let readPercentage = 0;
-    let acknowledgePercentage = 0;
-    
-    // IMPLEMENT AUDIENCE COUNT LOGIC HERE based on department and target audience
-    // This is a placeholder; you'd need to fetch actual audience counts from User model
-    const estimatedAudienceCount = 100; // Placeholder
-    
-    if (estimatedAudienceCount > 0) {
-      readPercentage = (readCount / estimatedAudienceCount) * 100;
-      acknowledgePercentage = (acknowledgeCount / estimatedAudienceCount) * 100;
-    }
-    
-    return {
-      noticeId: notice._id,
-      title: notice.title,
-      publishDate: notice.publishDate,
-      readCount,
-      acknowledgeCount,
-      readPercentage,
-      acknowledgePercentage,
-      audienceCount: estimatedAudienceCount
-    };
   }
 };
-
-// Pre-save middleware to generate reference number for certain notice types
-noticeSchema.pre('save', async function(next) {
-  // Only generate reference numbers for official notices if not already set
-  if (
-    !this.referenceNumber && 
-    ['EXAMINATION', 'ADMINISTRATIVE', 'ACADEMIC'].includes(this.noticeType) &&
-    this.status !== 'DRAFT'
-  ) {
-    const currentYear = new Date().getFullYear();
-    const month = new Date().getMonth() + 1;
-    
-    // Get count of notices of this type this year for sequential numbering
-    const count = await this.constructor.countDocuments({
-      noticeType: this.noticeType,
-      createdAt: {
-        $gte: new Date(`${currentYear}-01-01`),
-        $lte: new Date(`${currentYear}-12-31`)
-      }
-    });
-    
-    // Format: TYPE/YEAR/MONTH/SEQUENCE 
-    // Example: EXM/2023/04/001 for examination notice
-    const typePrefix = {
-      'EXAMINATION': 'EXM',
-      'ADMINISTRATIVE': 'ADM',
-      'ACADEMIC': 'ACD',
-      'SCHOLARSHIP': 'SCH',
-      'PLACEMENT': 'PLT',
-      'ADMISSION': 'ADN'
-    };
-    
-    const prefix = typePrefix[this.noticeType] || 'GEN';
-    
-    this.referenceNumber = `${prefix}/${currentYear}/${month.toString().padStart(2, '0')}/${(count + 1).toString().padStart(3, '0')}`;
-  }
-  
-  next();
-});
 
 // Create the model
 const Notice = mongoose.model('Notice', noticeSchema);
