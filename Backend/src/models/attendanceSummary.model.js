@@ -28,12 +28,6 @@ const attendanceSummarySchema = new mongoose.Schema(
       required: [true, "Semester ID is required"],
       index: true,
     },
-    academicYearId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "AcademicYear",
-      required: [true, "Academic year ID is required"],
-      index: true,
-    },
     totalClasses: {
       type: Number,
       required: true,
@@ -71,37 +65,14 @@ const attendanceSummarySchema = new mongoose.Schema(
       enum: ["pending", "approved", "rejected", "not_applicable"],
       default: "not_applicable",
     },
-    condonationApprovedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    condonationApprovedDate: {
-      type: Date,
-    },
     condonationReason: {
       type: String,
       trim: true,
       maxlength: [500, "Condonation reason cannot exceed 500 characters"],
     },
-    warningIssued: {
-      type: Boolean,
-      default: false,
-    },
-    warningDate: {
-      type: Date,
-    },
-    warningLevel: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 3,
-    },
     isEligible: {
       type: Boolean,
       default: true,
-    },
-    eligibilityCalculatedAt: {
-      type: Date,
     },
     requiredPercentage: {
       type: Number,
@@ -179,7 +150,6 @@ attendanceSummarySchema.pre("save", async function (next) {
     const effectivePercentage = this.effectivePercentage;
 
     this.isEligible = effectivePercentage >= this.requiredPercentage;
-    this.eligibilityCalculatedAt = new Date();
 
     // Update last calculated timestamp
     this.lastCalculated = new Date();
@@ -237,25 +207,8 @@ attendanceSummarySchema.methods.applyForCondonation = function (
 };
 
 // Method to process condonation
-attendanceSummarySchema.methods.processCondonation = function (
-  status,
-  userId = null,
-) {
+attendanceSummarySchema.methods.processCondonation = function (status) {
   this.condonationStatus = status;
-
-  if (status === "approved") {
-    this.condonationApprovedBy = userId;
-    this.condonationApprovedDate = new Date();
-  }
-
-  return this;
-};
-
-// Method to issue a warning
-attendanceSummarySchema.methods.issueWarning = function (level = 1) {
-  this.warningIssued = true;
-  this.warningDate = new Date();
-  this.warningLevel = level;
   return this;
 };
 
@@ -328,7 +281,6 @@ attendanceSummarySchema.statics.updateFromAttendanceRecords = async function (
       studentId,
       courseId,
       semesterId,
-      academicYearId: semester.academicYearId,
     });
   }
 

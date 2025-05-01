@@ -23,7 +23,7 @@ const attendanceStatusTypeSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
-      maxlength: [255, "Description cannot exceed 255 characters"],
+      maxlength: [255, "Description cannot exceed  255 characters"],
     },
     isCountedPresent: {
       type: Boolean,

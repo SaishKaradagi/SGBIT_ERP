@@ -31,27 +31,12 @@ const departmentSchema = new mongoose.Schema(
       maxlength: [100, "Department name cannot be more than 100 characters"],
       index: true,
     },
-    shortName: {
-      type: String,
-      required: [true, "Department short name is required"],
-      trim: true,
-      uppercase: true,
-      maxlength: [
-        10,
-        "Department short name cannot be more than 10 characters",
-      ],
-    },
     // Academic Information
     hod: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Faculty",
       default: null,
       index: true,
-    },
-    deputyHod: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Faculty",
-      default: null,
     },
     faculty: [
       {
@@ -274,23 +259,6 @@ const departmentSchema = new mongoose.Schema(
       ref: "Department",
       default: null,
     },
-    metadata: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
-    },
-    sortOrder: {
-      type: Number,
-      default: 999,
-    },
-    // Audit fields
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    updatedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
   },
   {
     timestamps: true,
@@ -305,7 +273,6 @@ departmentSchema.index({ name: 1 });
 departmentSchema.index({ status: 1 });
 departmentSchema.index({ hod: 1 });
 departmentSchema.index({ establishedYear: 1 });
-departmentSchema.index({ sortOrder: 1 });
 
 // Virtual to get the department age
 departmentSchema.virtual("age").get(function () {
@@ -339,7 +306,7 @@ departmentSchema.virtual("students", {
 
 // Static method to find active departments
 departmentSchema.statics.findActiveDepartments = function () {
-  return this.find({ status: "active" }).sort({ sortOrder: 1, name: 1 });
+  return this.find({ status: "active" }).sort({ name: 1 });
 };
 
 // Static method to find departments by programme
@@ -466,42 +433,6 @@ departmentSchema.methods.assignHOD = async function (facultyId) {
 // Method to remove HOD
 departmentSchema.methods.removeHOD = function () {
   this.hod = null;
-  return this.save();
-};
-
-// Method to assign deputy HOD
-departmentSchema.methods.assignDeputyHOD = async function (facultyId) {
-  if (this.deputyHod && this.deputyHod.toString() === facultyId.toString()) {
-    throw new Error("Faculty is already Deputy HOD of this department");
-  }
-
-  if (this.hod && this.hod.toString() === facultyId.toString()) {
-    throw new Error(
-      "Faculty is already HOD and cannot be Deputy HOD simultaneously",
-    );
-  }
-
-  const Faculty = mongoose.model("Faculty");
-  const faculty = await Faculty.findById(facultyId);
-
-  if (!faculty) {
-    throw new Error("Faculty not found");
-  }
-
-  // Check if faculty belongs to this department
-  if (faculty.department.toString() !== this._id.toString()) {
-    throw new Error(
-      "Faculty must belong to this department to be assigned as Deputy HOD",
-    );
-  }
-
-  this.deputyHod = facultyId;
-  return this.save();
-};
-
-// Method to remove deputy HOD
-departmentSchema.methods.removeDeputyHOD = function () {
-  this.deputyHod = null;
   return this.save();
 };
 
@@ -650,42 +581,10 @@ departmentSchema.pre("save", async function (next) {
   next();
 });
 
-// Pre middleware to ensure deputy HOD is a faculty member from the same department
-departmentSchema.pre("save", async function (next) {
-  if (this.isModified("deputyHod") && this.deputyHod) {
-    if (this.hod && this.deputyHod.toString() === this.hod.toString()) {
-      return next(
-        new Error("HOD and Deputy HOD cannot be the same faculty member"),
-      );
-    }
-
-    const Faculty = mongoose.model("Faculty");
-    try {
-      const faculty = await Faculty.findById(this.deputyHod);
-
-      if (!faculty) {
-        return next(new Error("Assigned Deputy HOD does not exist in Faculty"));
-      }
-
-      if (faculty.department.toString() !== this._id.toString()) {
-        return next(new Error("Deputy HOD must belong to this department"));
-      }
-    } catch (error) {
-      return next(error);
-    }
-  }
-
-  next();
-});
-
-// Middleware to handle "ON DELETE SET NULL" for HOD and deputy HOD
+// Middleware to handle "ON DELETE SET NULL" for HOD
 departmentSchema.pre("save", async function (next) {
   if (this.isModified("hod") && !this.hod) {
     this.hod = null;
-  }
-
-  if (this.isModified("deputyHod") && !this.deputyHod) {
-    this.deputyHod = null;
   }
 
   next();
@@ -710,15 +609,10 @@ const setupFacultyChanges = async () => {
 
     changeStream.on("change", async (change) => {
       if (change.operationType === "delete") {
-        // Handle faculty deletion - set HOD and deputyHOD to null if matching
+        // Handle faculty deletion - set HOD to null if matching
         await Department.updateMany(
           { hod: change.documentKey._id },
           { $set: { hod: null } },
-        );
-
-        await Department.updateMany(
-          { deputyHod: change.documentKey._id },
-          { $set: { deputyHod: null } },
         );
 
         // Remove from faculty array

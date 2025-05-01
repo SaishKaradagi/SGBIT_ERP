@@ -26,12 +26,6 @@ const courseRegistrationSchema = new mongoose.Schema(
       ref: "Semester",
       required: [true, "Semester is required"],
     },
-    section: {
-      type: String,
-      required: [true, "Section is required"],
-      trim: true,
-      uppercase: true,
-    },
     batch: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Batch",
@@ -48,43 +42,6 @@ const courseRegistrationSchema = new mongoose.Schema(
       default: "registered",
       required: true,
     },
-    grade: {
-      type: String,
-      trim: true,
-      uppercase: true,
-      validate: {
-        validator: function (v) {
-          // Only validate if a grade is provided
-          if (!v) return true;
-          // Common grades in Indian universities
-          return [
-            "A+",
-            "A",
-            "B+",
-            "B",
-            "C+",
-            "C",
-            "D+",
-            "D",
-            "E",
-            "F",
-            "I",
-            "W",
-          ].includes(v);
-        },
-        message: (props) => `${props.value} is not a valid grade`,
-      },
-    },
-    gradePoints: {
-      type: Number,
-      min: 0,
-      max: 10, // 10-point grading system common in India
-    },
-    attendancePercentage: {
-      type: Number,
-      min: 0,
-      max: 100,
-    },
     isRepeat: {
       type: Boolean,
       default: false,
@@ -95,12 +52,7 @@ const courseRegistrationSchema = new mongoose.Schema(
     },
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Admin",
-    },
-    remarks: {
-      type: String,
-      trim: true,
-      maxlength: [500, "Remarks cannot exceed 500 characters"],
+      ref: "User",
     },
   },
   {
@@ -157,91 +109,6 @@ courseRegistrationSchema.statics.getCompletedCourses = function (studentId) {
     .populate("semester", "academicYear term");
 };
 
-// Static method to calculate SGPA for a semester
-courseRegistrationSchema.statics.calculateSGPA = async function (
-  studentId,
-  semesterId,
-) {
-  const registrations = await this.find({
-    student: studentId,
-    semester: semesterId,
-    status: "completed",
-    gradePoints: { $exists: true },
-  }).populate("course", "credits");
-
-  if (registrations.length === 0) {
-    return 0;
-  }
-
-  let totalCredits = 0;
-  let totalGradePoints = 0;
-
-  for (const reg of registrations) {
-    totalCredits += reg.course.credits;
-    totalGradePoints += reg.course.credits * reg.gradePoints;
-  }
-
-  return totalCredits > 0 ? (totalGradePoints / totalCredits).toFixed(2) : 0;
-};
-
-// Static method to calculate CGPA
-courseRegistrationSchema.statics.calculateCGPA = async function (studentId) {
-  const registrations = await this.find({
-    student: studentId,
-    status: "completed",
-    gradePoints: { $exists: true },
-  }).populate("course", "credits");
-
-  if (registrations.length === 0) {
-    return 0;
-  }
-
-  let totalCredits = 0;
-  let totalGradePoints = 0;
-
-  for (const reg of registrations) {
-    totalCredits += reg.course.credits;
-    totalGradePoints += reg.course.credits * reg.gradePoints;
-  }
-
-  return totalCredits > 0 ? (totalGradePoints / totalCredits).toFixed(2) : 0;
-};
-
-// Method to update course status and grade
-courseRegistrationSchema.methods.updateGradeAndStatus = function (
-  grade,
-  status,
-  userId,
-) {
-  const gradeMap = {
-    "A+": 10,
-    A: 9,
-    "B+": 8,
-    B: 7,
-    "C+": 6,
-    C: 5,
-    "D+": 4,
-    D: 3,
-    E: 2,
-    F: 0,
-  };
-
-  if (grade) {
-    this.grade = grade;
-    this.gradePoints = gradeMap[grade] || 0;
-  }
-
-  if (
-    status &&
-    ["registered", "dropped", "completed", "failed", "backlog"].includes(status)
-  ) {
-    this.status = status;
-  }
-
-  this.approvedBy = userId;
-  return this.save();
-};
-
 // Pre-save Hook to Validate Registration
 courseRegistrationSchema.pre("save", async function (next) {
   // For new registrations
@@ -257,12 +124,11 @@ courseRegistrationSchema.pre("save", async function (next) {
       return next(new Error("This course registration already exists!"));
     }
 
-    // Check if the course allocation exists for this section and batch
+    // Check if the course allocation exists for this batch
     const CourseAllocation = mongoose.model("CourseAllocation");
     const allocation = await CourseAllocation.findOne({
       course: this.course,
       semester: this.semester,
-      section: this.section,
       batch: this.batch,
       status: "active",
     });
@@ -270,7 +136,7 @@ courseRegistrationSchema.pre("save", async function (next) {
     if (!allocation) {
       return next(
         new Error(
-          "No active course allocation found for this course, section, and batch",
+          "No active course allocation found for this course and batch",
         ),
       );
     }
@@ -291,33 +157,6 @@ courseRegistrationSchema.pre("save", async function (next) {
           ),
         );
       }
-    }
-  }
-
-  // For grade updates
-  if (this.isModified("grade") && this.grade) {
-    const gradeMap = {
-      "A+": 10,
-      A: 9,
-      "B+": 8,
-      B: 7,
-      "C+": 6,
-      C: 5,
-      "D+": 4,
-      D: 3,
-      E: 2,
-      F: 0,
-    };
-
-    this.gradePoints = gradeMap[this.grade] || 0;
-
-    // Update status based on grade
-    if (this.grade === "F") {
-      this.status = "failed";
-    } else if (["I", "W"].includes(this.grade)) {
-      this.status = "dropped";
-    } else {
-      this.status = "completed";
     }
   }
 

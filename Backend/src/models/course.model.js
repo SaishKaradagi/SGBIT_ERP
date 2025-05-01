@@ -10,7 +10,7 @@ const courseSchema = new mongoose.Schema(
       unique: true,
       required: true,
       immutable: true,
-      index: true, // Added index for faster queries by UUID
+      index: true,
     },
     code: {
       type: String,
@@ -21,7 +21,6 @@ const courseSchema = new mongoose.Schema(
       maxlength: [20, "Course code cannot exceed 20 characters"],
       validate: {
         validator: function (v) {
-          // Common format for Indian college course codes (alphanumeric with possible hyphens)
           return /^[A-Z0-9-]{2,20}$/.test(v);
         },
         message: (props) => `${props.value} is not a valid course code format!`,
@@ -34,6 +33,11 @@ const courseSchema = new mongoose.Schema(
       maxlength: [255, "Course name cannot exceed 255 characters"],
       minlength: [3, "Course name must be at least 3 characters"],
     },
+    description: {
+      type: String,
+      trim: true,
+      maxlength: [2000, "Description cannot exceed 2000 characters"],
+    },
     department: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Department",
@@ -44,20 +48,14 @@ const courseSchema = new mongoose.Schema(
       type: Number,
       required: [true, "Credits are required"],
       min: [0, "Credits cannot be negative"],
-      max: [20, "Credits cannot exceed 20"], // More realistic maximum for Indian college credits
+      max: [20, "Credits cannot exceed 20"],
       validate: {
         validator: function (v) {
-          // Credits in India are typically whole numbers or half credits (e.g., 4, 3.5)
           return v === Math.floor(v) || v === Math.floor(v) + 0.5;
         },
         message: (props) =>
           `${props.value} is not a valid credit value. Use whole or half credits.`,
       },
-    },
-    description: {
-      type: String,
-      trim: true,
-      maxlength: [5000, "Description cannot exceed 5000 characters"],
     },
     courseType: {
       type: mongoose.Schema.Types.ObjectId,
@@ -77,18 +75,15 @@ const courseSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      default: null,
     },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 // Indexes for efficient queries
@@ -96,16 +91,16 @@ courseSchema.index({ code: 1 }, { unique: true });
 courseSchema.index({ department: 1 });
 courseSchema.index({ courseType: 1 });
 courseSchema.index({ status: 1 });
-courseSchema.index({ name: "text", description: "text" }); // Text search capabilities
+courseSchema.index({ name: "text", description: "text" }); // Full-text search support
 
-// Static Method to Find Active Courses by Department
+// Static method to find active courses by department
 courseSchema.statics.findActiveByDepartment = function (departmentId) {
   return this.find({ department: departmentId, status: "active" })
     .populate("department", "name")
     .populate("courseType", "name");
 };
 
-// Method to Change Course Status
+// Method to change course status
 courseSchema.methods.changeStatus = function (newStatus, userId) {
   if (!["active", "inactive", "archived"].includes(newStatus)) {
     throw new Error("Invalid status value");
@@ -115,7 +110,7 @@ courseSchema.methods.changeStatus = function (newStatus, userId) {
   return this.save();
 };
 
-// Virtual to get prerequisites (using coursePrerequisite collection)
+// Virtual to get prerequisites
 courseSchema.virtual("prerequisites", {
   ref: "CoursePrerequisite",
   localField: "_id",

@@ -11,7 +11,7 @@ const eventSchema = new mongoose.Schema({
   },
   title: {
     type: String,
-    required: [true, 'Event title is required'],
+    required: [true, 'Event title is always required'],
     trim: true,
     maxlength: [255, 'Title cannot be more than 255 characters']
   },

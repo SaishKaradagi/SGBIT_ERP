@@ -19,7 +19,7 @@ const courseAllocationSchema = new mongoose.Schema(
     faculty: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Faculty",
-      required: [true, "Faculty is required"],
+      required: [true, "Faculty is always required"],
     },
     semester: {
       type: mongoose.Schema.Types.ObjectId,

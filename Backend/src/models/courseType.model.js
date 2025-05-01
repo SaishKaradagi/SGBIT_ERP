@@ -7,7 +7,7 @@ const courseTypeSchema = new mongoose.Schema({
     unique: true,
     trim: true,
     uppercase: true,
-    maxlength: [10, 'Course type code cannot be more than 10 characters']
+    maxlength: [10, 'Course type code cannot be more than ten characters']
   },
   name: {
     type: String,

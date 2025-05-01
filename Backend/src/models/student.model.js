@@ -48,6 +48,12 @@ const studentSchema = new mongoose.Schema(
       required: [true, "Batch reference is required"],
       index: true,
     },
+    section: {
+      type: String,
+      required: [true, "Section is required"],
+      trim: true,
+      uppercase: true,
+    },
     // Corrected: Student-specific personal information as direct properties, not references
     dob: {
       type: Date,
