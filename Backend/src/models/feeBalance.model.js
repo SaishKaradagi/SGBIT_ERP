@@ -43,11 +43,7 @@ const feeBalanceSchema = new mongoose.Schema(
       ],
       trim: true,
     },
-    waiverRemarks: {
-      type: String,
-      trim: true,
-      maxlength: 500,
-    },
+
     waiverApprovedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Admin",
@@ -143,7 +139,6 @@ feeBalanceSchema.methods.addPayment = async function (
 feeBalanceSchema.methods.addConcession = async function (
   amount,
   category,
-  remarks,
   approvedBy,
 ) {
   if (amount <= 0) {
@@ -152,7 +147,6 @@ feeBalanceSchema.methods.addConcession = async function (
 
   this.concessionAmount += amount;
   if (category) this.waiverCategory = category;
-  if (remarks) this.waiverRemarks = remarks;
   if (approvedBy) {
     this.waiverApprovedBy = approvedBy;
     this.waiverApprovedDate = new Date();

@@ -27,20 +27,7 @@ const feeStructureSchema = new mongoose.Schema(
       trim: true,
       maxlength: [500, "Description cannot exceed 500 characters"],
     },
-    feeCode: {
-      type: String,
-      required: [true, "Fee code is required"],
-      trim: true,
-      maxlength: [50, "Fee code cannot exceed 50 characters"],
-      unique: true,
-      index: true,
-    },
-    academicYear: {
-      type: String,
-      required: [true, "Academic year is required"],
-      trim: true,
-      index: true,
-    },
+
     programmeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Programme",
@@ -198,7 +185,6 @@ feeStructureSchema.index(
     programmeId: 1,
     semesterId: 1,
     category: 1,
-    academicYear: 1,
     applicableFor: 1,
   },
   { unique: true },
@@ -295,12 +281,10 @@ feeStructureSchema.pre("save", function (next) {
 feeStructureSchema.statics.getActiveFeeStructures = function (
   programmeId,
   semesterId,
-  academicYear,
 ) {
   return this.find({
     programmeId,
     semesterId,
-    academicYear,
     isActive: true,
   })
     .sort({ category: 1, name: 1 })
@@ -311,13 +295,11 @@ feeStructureSchema.statics.getActiveFeeStructures = function (
 feeStructureSchema.statics.calculateTotalFees = async function (
   programmeId,
   semesterId,
-  academicYear,
   applicableFor = "all",
 ) {
   const feeStructures = await this.find({
     programmeId,
     semesterId,
-    academicYear,
     isActive: true,
     $or: [{ applicableFor: "all" }, { applicableFor }],
   });

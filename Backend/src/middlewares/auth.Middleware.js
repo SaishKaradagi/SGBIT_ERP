@@ -1,105 +1,253 @@
+// src/middlewares/auth.middleware.js
 import jwt from "jsonwebtoken";
 import { promisify } from "util";
-import User from "../models/User.js";
-import AppError from "../utils/AppError.js";
-import catchAsync from "../utils/catchAsync.js";
+import dotenv from "dotenv";
+import User from "../models/user.model.js";
+import { ApiError } from "../utils/ApiError.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
+import { redisClient } from "../db/redis.connection.js";
+
+dotenv.config();
 
 /**
- * Middleware to protect routes that require authentication
+ * Verifies the JWT token and attaches the user to the request
  */
-export const protect = catchAsync(async (req, res, next) => {
-  // 1) Get token from header or cookie
+export const authenticate = asyncHandler(async (req, res, next) => {
+  // 1) Get token from Authorization header
   let token;
+
   if (
     req.headers.authorization &&
     req.headers.authorization.startsWith("Bearer")
   ) {
     token = req.headers.authorization.split(" ")[1];
-  } else if (req.cookies && req.cookies.jwt) {
-    token = req.cookies.jwt;
+  } else if (req.cookies?.accessToken) {
+    token = req.cookies.accessToken;
   }
 
   if (!token) {
     return next(
-      new AppError("You are not logged in. Please log in to get access.", 401),
+      new ApiError(401, "You are not logged in. Please log in to get access."),
     );
   }
 
   // 2) Verify token
-  const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+  const decoded = await promisify(jwt.verify)(
+    token,
+    process.env.JWT_ACCESS_SECRET,
+  ).catch((err) => {
+    if (err.name === "JsonWebTokenError") {
+      return next(new ApiError(401, "Invalid token. Please log in again."));
+    }
+    if (err.name === "TokenExpiredError") {
+      return next(
+        new ApiError(401, "Your token has expired. Please log in again."),
+      );
+    }
+    return next(
+      new ApiError(401, "Authentication failed. Please log in again."),
+    );
+  });
 
-  // 3) Check if user still exists
+  // 3) Check if token is blacklisted
+  const isBlacklisted = await redisClient.get(`blacklist:${token}`);
+  if (isBlacklisted) {
+    return next(
+      new ApiError(401, "Token has been revoked. Please log in again."),
+    );
+  }
+
+  // 4) Check if user still exists
   const user = await User.findById(decoded.id);
   if (!user) {
     return next(
-      new AppError("The user belonging to this token no longer exists.", 401),
+      new ApiError(401, "The user belonging to this token no longer exists."),
     );
   }
 
-  // 4) Check if user changed password after the token was issued
+  // 5) Check if user changed password after token was issued
   if (user.changedPasswordAfter(decoded.iat)) {
     return next(
-      new AppError("User recently changed password! Please log in again.", 401),
+      new ApiError(401, "User recently changed password. Please log in again."),
     );
   }
 
-  // 5) Check if user account is active
+  // 6) Check if account is active
   if (user.status !== "active") {
     return next(
-      new AppError(
-        `Your account is ${user.status}. Please contact administrator.`,
+      new ApiError(
         403,
+        `Your account is ${user.status}. Please contact the administrator.`,
       ),
     );
   }
 
-  // Grant access to protected route
+  // 7) Grant access to protected route
   req.user = user;
-  res.locals.user = user;
   next();
 });
 
 /**
- * Middleware to restrict access to certain roles
- * @param  {...String} roles - Roles allowed to access the route
+ * Role-based access control middleware
+ * Restricts access based on user role
+ * @param {...String} roles - Allowed roles
  */
 export const restrictTo = (...roles) => {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!req.user) {
       return next(
-        new AppError("You do not have permission to perform this action", 403),
+        new ApiError(
+          401,
+          "Authentication required before checking authorization.",
+        ),
       );
     }
+
+    if (!roles.includes(req.user.role)) {
+      return next(
+        new ApiError(403, "You do not have permission to perform this action."),
+      );
+    }
+
     next();
   };
 };
 
 /**
- * Middleware to check if user has required permissions
- * @param  {...String} permissions - Required permissions to access the route
+ * Permission-based access control middleware
+ * Restricts access based on user permissions
+ * @param {...String} requiredPermissions - Permissions required
  */
-export const requirePermission = (...permissions) => {
-  return catchAsync(async (req, res, next) => {
-    // Get permissions from role permissions mapping
-    const user = await User.findById(req.user.id).select("+permissions");
-
-    // If no specific permissions required, proceed
-    if (permissions.length === 0) {
-      return next();
+export const requirePermission = (...requiredPermissions) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return next(
+        new ApiError(
+          401,
+          "Authentication required before checking permissions.",
+        ),
+      );
     }
 
-    // Check each required permission
-    const hasAllPermissions = permissions.every((permission) => {
-      return checkPermission(user, permission);
-    });
+    // Check if user has all required permissions
+    const hasAllPermissions = requiredPermissions.every((permission) =>
+      req.user.permissions.includes(permission),
+    );
 
     if (!hasAllPermissions) {
       return next(
-        new AppError(
-          "You do not have sufficient permissions to perform this action",
+        new ApiError(
           403,
+          "You do not have the necessary permissions to perform this action.",
         ),
       );
+    }
+
+    next();
+  };
+};
+
+/**
+ * Verified email middleware
+ * Ensures user has verified their email
+ */
+export const requireVerifiedEmail = asyncHandler(async (req, res, next) => {
+  if (!req.user) {
+    return next(
+      new ApiError(
+        401,
+        "Authentication required before checking email verification.",
+      ),
+    );
+  }
+
+  if (!req.user.isEmailVerified) {
+    return next(
+      new ApiError(
+        403,
+        "Email verification required. Please verify your email.",
+      ),
+    );
+  }
+
+  next();
+});
+
+/**
+ * Multi-factor Authentication middleware
+ * Ensures MFA is verified for users with MFA enabled
+ */
+export const requireMfaVerification = asyncHandler(async (req, res, next) => {
+  // Skip MFA check if user doesn't have MFA enabled
+  if (!req.user.mfaEnabled) {
+    return next();
+  }
+
+  // Check if MFA session is verified
+  const mfaVerified = req.session?.mfaVerified === true;
+
+  if (!mfaVerified) {
+    return next(
+      new ApiError(
+        403,
+        "Multi-factor authentication required. Please complete the verification.",
+      ),
+    );
+  }
+
+  next();
+});
+
+/**
+ * Active session check middleware
+ * Ensures the session is still valid and hasn't been invalidated
+ */
+export const requireActiveSession = asyncHandler(async (req, res, next) => {
+  const sessionId = req.sessionID;
+
+  // Check if session exists in Redis
+  const sessionExists = await redisClient.exists(`session:${sessionId}`);
+
+  if (!sessionExists) {
+    return next(
+      new ApiError(
+        401,
+        "Session has expired or been invalidated. Please log in again.",
+      ),
+    );
+  }
+
+  next();
+});
+
+/**
+ * Rate limiting for specific routes
+ * Uses Redis to track request counts by IP or user ID
+ * @param {Number} maxRequests - Maximum requests allowed in the window
+ * @param {Number} windowMs - Time window in milliseconds
+ * @param {String} keyPrefix - Prefix for the Redis key
+ */
+export const rateLimit = (maxRequests, windowMs, keyPrefix = "ratelimit") => {
+  return asyncHandler(async (req, res, next) => {
+    const key = `${keyPrefix}:${req.ip}`;
+
+    // Get current count from Redis
+    const currentRequests = await redisClient.get(key);
+
+    if (!currentRequests) {
+      // First request, set counter and expiry
+      await redisClient.set(key, 1, "EX", Math.ceil(windowMs / 1000));
+    } else if (parseInt(currentRequests) >= maxRequests) {
+      // Too many requests
+      return next(
+        new ApiError(
+          429,
+          "Too many requests from this IP, please try again later.",
+        ),
+      );
+    } else {
+      // Increment counter
+      await redisClient.incr(key);
     }
 
     next();
@@ -107,151 +255,33 @@ export const requirePermission = (...permissions) => {
 };
 
 /**
- * Helper function to check permissions with role-based rules
+ * Login rate limiting middleware
+ * Specialized rate limiting for login attempts
  */
-const checkPermission = (user, permission) => {
-  // Role-based Permissions Mapping
-  const rolesPermissions = {
-    superAdmin: ["*"], // All permissions
-    admin: [
-      "create:*",
-      "read:*",
-      "update:*",
-      "delete:*",
-      "manage:users",
-      "manage:departments",
-      "manage:courses",
-      "manage:batches",
-      "manage:faculty",
-      "manage:students",
-    ],
-    hod: [
-      "read:*",
-      "create:attendance",
-      "create:result",
-      "update:result",
-      "create:timetable",
-      "update:timetable",
-      "read:reports",
-      "manage:department",
-      "manage:faculty",
-      "approve:leave",
-    ],
-    faculty: [
-      "create:attendance",
-      "read:attendance",
-      "update:attendance",
-      "create:assignment",
-      "read:assignment",
-      "update:assignment",
-      "create:result",
-      "read:result",
-      "update:result",
-      "read:student",
-      "read:course",
-      "read:batch",
-      "create:leave",
-      "read:leave",
-    ],
-    proctor: [
-      "read:student",
-      "read:attendance",
-      "read:result",
-      "create:counseling",
-      "read:counseling",
-      "update:counseling",
-      "read:report",
-    ],
-    student: [
-      "read:course",
-      "read:timetable",
-      "read:assignment",
-      "create:submission",
-      "read:submission",
-      "update:submission",
-      "read:result",
-      "read:attendance",
-      "create:leave",
-      "read:leave",
-      "read:fee",
-      "create:feedback",
-    ],
-    studentGuardian: [
-      "read:attendance",
-      "read:result",
-      "read:fee",
-      "read:timetable",
-      "read:leave",
-    ],
-    accountant: [
-      "create:fee",
-      "read:fee",
-      "update:fee",
-      "create:payment",
-      "read:payment",
-      "update:payment",
-      "create:salary",
-      "read:salary",
-      "update:salary",
-      "read:reports",
-    ],
-    librarian: [
-      "create:book",
-      "read:book",
-      "update:book",
-      "delete:book",
-      "create:issue",
-      "read:issue",
-      "update:issue",
-      "delete:issue",
-      "read:student",
-      "read:faculty",
-    ],
-    staff: [
-      "read:student",
-      "read:faculty",
-      "read:department",
-      "read:course",
-      "read:batch",
-      "read:timetable",
-    ],
-    guest: ["read:public", "create:inquiry"],
-  };
-
-  // Get role permissions
-  const userRolePermissions = rolesPermissions[user.role] || [];
-
-  // Check wildcard permission for role
-  if (userRolePermissions.includes("*")) return true;
-
-  // Check specific permission for role
-  if (userRolePermissions.includes(permission)) return true;
-
-  // Check wildcard for action category
-  const category = permission.split(":")[0];
-  if (userRolePermissions.includes(`${category}:*`)) return true;
-
-  // Check custom user permissions
-  if (user.permissions && user.permissions.includes(permission)) return true;
-
-  return false;
-};
+export const loginRateLimit = rateLimit(5, 15 * 60 * 1000, "login");
 
 /**
- * Middleware to log user activity
+ * Account lockout middleware
+ * Checks if user account is locked due to failed login attempts
  */
-export const logActivity = catchAsync(async (req, res, next) => {
-  // Skip activity logging for certain routes
-  const excludedPaths = ["/api/v1/health", "/api/v1/metrics"];
-  if (excludedPaths.includes(req.path)) {
-    return next();
+export const checkAccountLockout = asyncHandler(async (req, res, next) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return next(new ApiError(400, "Email is required."));
   }
 
-  // Create activity log if user is logged in
-  if (req.user) {
-    // Activity logging logic here (can be implemented in a separate service)
-    console.log(
-      `User ${req.user.id} accessed ${req.method} ${req.path} at ${new Date()}`,
+  const user = await User.findOne({ email });
+
+  if (user && user.lockedUntil && user.lockedUntil > Date.now()) {
+    const remainingTimeMs = user.lockedUntil - Date.now();
+    const remainingMinutes = Math.ceil(remainingTimeMs / (60 * 1000));
+
+    return next(
+      new ApiError(
+        403,
+        `Account is temporarily locked. Please try again in ${remainingMinutes} minutes.`,
+      ),
     );
   }
 

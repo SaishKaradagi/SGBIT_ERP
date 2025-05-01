@@ -30,12 +30,7 @@ const feePaymentSchema = new mongoose.Schema(
       ref: "FeeStructure",
       required: [true, "Fee structure reference is required"],
     },
-    academicYear: {
-      type: String,
-      required: [true, "Academic year is required"],
-      trim: true,
-      index: true,
-    },
+
     paymentDate: {
       type: Date,
       required: true,
@@ -108,9 +103,6 @@ const feePaymentSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: 100,
-    },
-    gatewayResponse: {
-      type: Object,
     },
     feeBalanceId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -234,25 +226,6 @@ feePaymentSchema.statics.findByStudentAndSemester = function (
   return this.find({
     studentId,
     semesterId,
-    isDeleted: false,
-    paymentStatus: "success",
-  })
-    .populate("studentId", "name usn email mobile")
-    .populate("semesterId", "name")
-    .populate("feeStructureId", "feeAmount")
-    .populate("collectedBy", "name")
-    .sort({ paymentDate: -1 })
-    .exec();
-};
-
-// Find Payments by Student & Academic Year
-feePaymentSchema.statics.findByStudentAndAcademicYear = function (
-  studentId,
-  academicYear,
-) {
-  return this.find({
-    studentId,
-    academicYear,
     isDeleted: false,
     paymentStatus: "success",
   })

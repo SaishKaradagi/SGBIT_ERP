@@ -37,27 +37,7 @@ const facultySchema = new mongoose.Schema(
       index: true,
     },
     // Basic Information
-    gender: {
-      type: String,
-      enum: {
-        values: ["male", "female", "other"],
-        message: "{VALUE} is not a valid gender option",
-      },
-      required: [true, "Gender is required"],
-    },
-    dateOfBirth: {
-      type: Date,
-      required: [true, "Date of birth is required"],
-      validate: {
-        validator: function (date) {
-          // Faculty must be at least 21 years old
-          const minAge = new Date();
-          minAge.setFullYear(minAge.getFullYear() - 21);
-          return date <= minAge;
-        },
-        message: "Faculty must be at least 21 years old",
-      },
-    },
+
     // Address is handled by a separate model with references
     permanentAddress: {
       type: mongoose.Schema.Types.ObjectId,
@@ -117,10 +97,7 @@ const facultySchema = new mongoose.Schema(
         message: "At least one specialization is required",
       },
     },
-    areaOfInterest: {
-      type: [String],
-      default: [],
-    },
+
     experience: {
       type: Number,
       default: 0,
@@ -372,18 +349,6 @@ const facultySchema = new mongoose.Schema(
       default: true,
       index: true,
     },
-    metadata: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
-    },
-    createdBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
-    updatedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-    },
   },
   {
     timestamps: true,
@@ -411,8 +376,11 @@ facultySchema.virtual("tenure").get(function () {
 
 // Virtual to get age
 facultySchema.virtual("age").get(function () {
-  if (!this.dateOfBirth) return null;
-  const birthDate = new Date(this.dateOfBirth);
+  // Get dateOfBirth from populated user document
+  const dateOfBirth = this.user && this.user.dateOfBirth;
+  if (!dateOfBirth) return null;
+
+  const birthDate = new Date(dateOfBirth);
   const now = new Date();
   const diffTime = Math.abs(now - birthDate);
   return Math.floor(diffTime / (1000 * 60 * 60 * 24 * 365));
@@ -420,8 +388,11 @@ facultySchema.virtual("age").get(function () {
 
 // Virtual to calculate retirement date (assuming 65 years retirement age)
 facultySchema.virtual("retirementDate").get(function () {
-  if (!this.dateOfBirth) return null;
-  const retirementDate = new Date(this.dateOfBirth);
+  // Get dateOfBirth from populated user document
+  const dateOfBirth = this.user && this.user.dateOfBirth;
+  if (!dateOfBirth) return null;
+
+  const retirementDate = new Date(dateOfBirth);
   retirementDate.setFullYear(retirementDate.getFullYear() + 65);
   return retirementDate;
 });
@@ -443,6 +414,28 @@ facultySchema.virtual("leaves", {
   ref: "Leave",
   localField: "_id",
   foreignField: "faculty",
+});
+
+// Method to get the full name from the user document
+facultySchema.virtual("fullName").get(function () {
+  if (!this.user) return "";
+  return `${this.user.firstName || ""} ${this.user.middleName || ""} ${this.user.lastName || ""}`
+    .trim()
+    .replace(/\s+/g, " ");
+});
+
+// Method to get email from the user document
+facultySchema.virtual("email").get(function () {
+  return this.user ? this.user.email : "";
+});
+
+// Method to get phone from the user document
+facultySchema.virtual("phone").get(function () {
+  return this.user ? this.user.phone : "";
+});
+
+facultySchema.virtual("gender").get(function () {
+  return this.user ? this.user.phone : "";
 });
 
 // Method to update faculty experience
@@ -523,7 +516,12 @@ facultySchema.statics.findByDepartment = function (departmentId) {
   return this.find({
     department: departmentId,
     status: "active",
-  }).populate("user", "firstName lastName email");
+  })
+    .populate(
+      "user",
+      "firstName middleName lastName email phone dateOfBirth gender",
+    )
+    .populate("department", "name code");
 };
 
 // Static method to find faculty by designation
@@ -531,7 +529,12 @@ facultySchema.statics.findByDesignation = function (designation) {
   return this.find({
     designation: designation,
     status: "active",
-  }).populate("user", "firstName lastName email");
+  })
+    .populate(
+      "user",
+      "firstName middleName lastName email phone dateOfBirth gender",
+    )
+    .populate("department", "name code");
 };
 
 // Static method to get faculty expiring contracts in next n days
@@ -544,7 +547,9 @@ facultySchema.statics.getExpiringContracts = function (days = 30) {
     isContractual: true,
     contractEndDate: { $gte: today, $lte: futureDate },
     status: "active",
-  }).populate("user", "firstName lastName email");
+  })
+    .populate("user", "firstName middleName lastName email phone")
+    .populate("department", "name code");
 };
 
 // Static method to get faculty count by department
@@ -569,6 +574,28 @@ facultySchema.statics.countByDepartment = async function () {
       },
     },
   ]);
+};
+
+// Static method to find a faculty with populated user information
+facultySchema.statics.findOneWithUserDetails = function (filter = {}) {
+  return this.findOne(filter)
+    .populate(
+      "user",
+      "firstName middleName lastName email phone dateOfBirth gender",
+    )
+    .populate("department", "name code")
+    .populate("permanentAddress")
+    .populate("currentAddress");
+};
+
+// Static method to find faculties with populated user information
+facultySchema.statics.findWithUserDetails = function (filter = {}) {
+  return this.find(filter)
+    .populate(
+      "user",
+      "firstName middleName lastName email phone dateOfBirth gender",
+    )
+    .populate("department", "name code");
 };
 
 // Pre-save hook to calculate experience based on experienceDetails
@@ -596,6 +623,16 @@ facultySchema.pre("save", function (next) {
     this.experience = Math.round(totalExperience);
   }
 
+  next();
+});
+
+// Default query middleware to populate user information
+facultySchema.pre(/^find/, function (next) {
+  // This will run before any find query
+  this.populate(
+    "user",
+    "firstName middleName lastName email phone dateOfBirth gender",
+  );
   next();
 });
 
