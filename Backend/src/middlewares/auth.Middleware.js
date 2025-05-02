@@ -1,287 +1,174 @@
-// src/middlewares/auth.middleware.js
+// auth.Middleware.js
 import jwt from "jsonwebtoken";
-import { promisify } from "util";
-import dotenv from "dotenv";
-import User from "../models/user.model.js";
+import { asyncHandler } from "./asyncHandler.middleware.js";
 import { ApiError } from "../utils/ApiError.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
-import { redisClient } from "../db/redis.connection.js";
+import User from "../models/user.model.js";
+import AdminPrivilege from "../models/adminPrivilege.model.js";
+import Admin from "../models/admin.model.js";
 
-dotenv.config();
+const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
 
-/**
- * Verifies the JWT token and attaches the user to the request
- */
-export const authenticate = asyncHandler(async (req, res, next) => {
-  // 1) Get token from Authorization header
-  let token;
-
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer")
-  ) {
-    token = req.headers.authorization.split(" ")[1];
-  } else if (req.cookies?.accessToken) {
-    token = req.cookies.accessToken;
-  }
+// Middleware to verify JWT token
+export const verifyJWT = asyncHandler(async (req, res, next) => {
+  // Get token from Authorization header
+  console.log("HEADERS:", req.headers);
+  const token = req.headers.authorization?.split(" ")[1];
 
   if (!token) {
-    return next(
-      new ApiError(401, "You are not logged in. Please log in to get access."),
-    );
+    throw new ApiError(401, "Unauthorized access - No token provided");
   }
 
-  // 2) Verify token
-  const decoded = await promisify(jwt.verify)(
-    token,
-    process.env.JWT_ACCESS_SECRET,
-  ).catch((err) => {
-    if (err.name === "JsonWebTokenError") {
-      return next(new ApiError(401, "Invalid token. Please log in again."));
+  try {
+    // Verify token
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    // Find user
+    const user = await User.findById(decoded.id).select("-password");
+
+    if (!user) {
+      throw new ApiError(401, "Invalid token - User not found");
     }
-    if (err.name === "TokenExpiredError") {
-      return next(
-        new ApiError(401, "Your token has expired. Please log in again."),
+
+    // Check if user is active
+    if (user.status !== "active") {
+      throw new ApiError(403, `Account is ${user.status}. Access denied.`);
+    }
+
+    // Check if password was changed after token was issued
+    if (user.changedPasswordAfter(decoded.iat)) {
+      throw new ApiError(
+        401,
+        "Password was changed recently. Please login again.",
       );
     }
-    return next(
-      new ApiError(401, "Authentication failed. Please log in again."),
-    );
-  });
 
-  // 3) Check if token is blacklisted
-  const isBlacklisted = await redisClient.get(`blacklist:${token}`);
-  if (isBlacklisted) {
-    return next(
-      new ApiError(401, "Token has been revoked. Please log in again."),
-    );
+    // Attach user to request object
+    req.user = user;
+    next();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(401, "Invalid or expired token. Please login again.");
   }
-
-  // 4) Check if user still exists
-  const user = await User.findById(decoded.id);
-  if (!user) {
-    return next(
-      new ApiError(401, "The user belonging to this token no longer exists."),
-    );
-  }
-
-  // 5) Check if user changed password after token was issued
-  if (user.changedPasswordAfter(decoded.iat)) {
-    return next(
-      new ApiError(401, "User recently changed password. Please log in again."),
-    );
-  }
-
-  // 6) Check if account is active
-  if (user.status !== "active") {
-    return next(
-      new ApiError(
-        403,
-        `Your account is ${user.status}. Please contact the administrator.`,
-      ),
-    );
-  }
-
-  // 7) Grant access to protected route
-  req.user = user;
-  next();
 });
 
-/**
- * Role-based access control middleware
- * Restricts access based on user role
- * @param {...String} roles - Allowed roles
- */
+// Middleware to check roles
 export const restrictTo = (...roles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return next(
-        new ApiError(
-          401,
-          "Authentication required before checking authorization.",
-        ),
-      );
-    }
-
-    if (!roles.includes(req.user.role)) {
-      return next(
-        new ApiError(403, "You do not have permission to perform this action."),
-      );
-    }
-
-    next();
-  };
-};
-
-/**
- * Permission-based access control middleware
- * Restricts access based on user permissions
- * @param {...String} requiredPermissions - Permissions required
- */
-export const requirePermission = (...requiredPermissions) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return next(
-        new ApiError(
-          401,
-          "Authentication required before checking permissions.",
-        ),
-      );
-    }
-
-    // Check if user has all required permissions
-    const hasAllPermissions = requiredPermissions.every((permission) =>
-      req.user.permissions.includes(permission),
-    );
-
-    if (!hasAllPermissions) {
-      return next(
-        new ApiError(
-          403,
-          "You do not have the necessary permissions to perform this action.",
-        ),
-      );
-    }
-
-    next();
-  };
-};
-
-/**
- * Verified email middleware
- * Ensures user has verified their email
- */
-export const requireVerifiedEmail = asyncHandler(async (req, res, next) => {
-  if (!req.user) {
-    return next(
-      new ApiError(
-        401,
-        "Authentication required before checking email verification.",
-      ),
-    );
-  }
-
-  if (!req.user.isEmailVerified) {
-    return next(
-      new ApiError(
-        403,
-        "Email verification required. Please verify your email.",
-      ),
-    );
-  }
-
-  next();
-});
-
-/**
- * Multi-factor Authentication middleware
- * Ensures MFA is verified for users with MFA enabled
- */
-export const requireMfaVerification = asyncHandler(async (req, res, next) => {
-  // Skip MFA check if user doesn't have MFA enabled
-  if (!req.user.mfaEnabled) {
-    return next();
-  }
-
-  // Check if MFA session is verified
-  const mfaVerified = req.session?.mfaVerified === true;
-
-  if (!mfaVerified) {
-    return next(
-      new ApiError(
-        403,
-        "Multi-factor authentication required. Please complete the verification.",
-      ),
-    );
-  }
-
-  next();
-});
-
-/**
- * Active session check middleware
- * Ensures the session is still valid and hasn't been invalidated
- */
-export const requireActiveSession = asyncHandler(async (req, res, next) => {
-  const sessionId = req.sessionID;
-
-  // Check if session exists in Redis
-  const sessionExists = await redisClient.exists(`session:${sessionId}`);
-
-  if (!sessionExists) {
-    return next(
-      new ApiError(
-        401,
-        "Session has expired or been invalidated. Please log in again.",
-      ),
-    );
-  }
-
-  next();
-});
-
-/**
- * Rate limiting for specific routes
- * Uses Redis to track request counts by IP or user ID
- * @param {Number} maxRequests - Maximum requests allowed in the window
- * @param {Number} windowMs - Time window in milliseconds
- * @param {String} keyPrefix - Prefix for the Redis key
- */
-export const rateLimit = (maxRequests, windowMs, keyPrefix = "ratelimit") => {
   return asyncHandler(async (req, res, next) => {
-    const key = `${keyPrefix}:${req.ip}`;
-
-    // Get current count from Redis
-    const currentRequests = await redisClient.get(key);
-
-    if (!currentRequests) {
-      // First request, set counter and expiry
-      await redisClient.set(key, 1, "EX", Math.ceil(windowMs / 1000));
-    } else if (parseInt(currentRequests) >= maxRequests) {
-      // Too many requests
-      return next(
-        new ApiError(
-          429,
-          "Too many requests from this IP, please try again later.",
-        ),
+    // Check if user has required role
+    if (!roles.includes(req.user.role)) {
+      throw new ApiError(
+        403,
+        "You do not have permission to perform this action",
       );
-    } else {
-      // Increment counter
-      await redisClient.incr(key);
     }
 
     next();
   });
 };
 
-/**
- * Login rate limiting middleware
- * Specialized rate limiting for login attempts
- */
-export const loginRateLimit = rateLimit(5, 15 * 60 * 1000, "login");
+// Middleware to check permissions for admin users
+export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
+  return asyncHandler(async (req, res, next) => {
+    const user = req.user;
 
-/**
- * Account lockout middleware
- * Checks if user account is locked due to failed login attempts
- */
-export const checkAccountLockout = asyncHandler(async (req, res, next) => {
-  const { email } = req.body;
+    // Only applicable to admin roles
+    if (!["admin", "superAdmin"].includes(user.role)) {
+      throw new ApiError(
+        403,
+        "You do not have permission to perform this action",
+      );
+    }
 
-  if (!email) {
-    return next(new ApiError(400, "Email is required."));
+    // SuperAdmins have all privileges
+    if (user.role === "superAdmin") {
+      return next();
+    }
+
+    // Find the admin record
+    const admin = await Admin.findOne({ user: user._id });
+
+    if (!admin) {
+      throw new ApiError(
+        403,
+        "Admin record not found. Please contact system administrator.",
+      );
+    }
+
+    // Check privileges
+    const hasPrivilege = await AdminPrivilege.hasPrivilege(
+      admin._id,
+      privilege,
+      scope,
+    );
+
+    if (!hasPrivilege) {
+      throw new ApiError(
+        403,
+        "You do not have the required privileges to perform this action",
+      );
+    }
+
+    next();
+  });
+};
+
+// Middleware for faculty-specific permissions
+export const hasFacultyPermission = (departmentCheck = false) => {
+  return asyncHandler(async (req, res, next) => {
+    const user = req.user;
+
+    // Only applicable to faculty, HOD roles
+    if (!["faculty", "hod"].includes(user.role)) {
+      throw new ApiError(
+        403,
+        "You do not have permission to perform this action",
+      );
+    }
+
+    // If departmentCheck is true, verify if faculty belongs to the requested department
+    if (departmentCheck) {
+      // Logic to check if faculty belongs to the department in request
+      // This would depend on your specific implementation
+      // Example:
+      // const { departmentId } = req.params;
+      // const faculty = await Faculty.findOne({ user: user._id });
+      // if (!faculty || faculty.department.toString() !== departmentId) {
+      //   throw new ApiError(
+      //     403,
+      //     "You do not have permission to access this department"
+      //   );
+      // }
+    }
+
+    next();
+  });
+};
+
+// Verify email verification status
+export const verifiedEmailOnly = asyncHandler(async (req, res, next) => {
+  if (!req.user.isEmailVerified) {
+    throw new ApiError(
+      403,
+      "Email is not verified. Please verify your email to access this resource.",
+    );
   }
 
-  const user = await User.findOne({ email });
+  next();
+});
 
-  if (user && user.lockedUntil && user.lockedUntil > Date.now()) {
-    const remainingTimeMs = user.lockedUntil - Date.now();
-    const remainingMinutes = Math.ceil(remainingTimeMs / (60 * 1000));
+// Middleware to check if account is locked
+export const accountNotLocked = asyncHandler(async (req, res, next) => {
+  const user = await User.findById(req.user._id).select("+lockedUntil");
 
-    return next(
-      new ApiError(
-        403,
-        `Account is temporarily locked. Please try again in ${remainingMinutes} minutes.`,
-      ),
+  if (user.lockedUntil && user.lockedUntil > Date.now()) {
+    const timeRemaining = Math.ceil(
+      (user.lockedUntil - Date.now()) / 1000 / 60,
+    );
+    throw new ApiError(
+      423,
+      `Account is locked. Please try again after ${timeRemaining} minutes`,
     );
   }
 

@@ -14,12 +14,12 @@ const userSchema = new mongoose.Schema(
       immutable: true,
       index: true,
     },
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User", // <-- Reference to the User model
-      required: true,
-      unique: true,
-    },
+    // user: {
+    //   type: mongoose.Schema.Types.ObjectId,
+    //   ref: "User", // <-- Reference to the User model
+    //   required: true,
+    //   unique: true,
+    // },
     // Personal Information
     firstName: {
       type: String,

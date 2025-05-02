@@ -1,16 +1,50 @@
+// app.js
 import express from "express";
+import { configureSecurityMiddleware } from "./middlewares/security.middleware.js";
+import { errorHandler } from "./middlewares/errorHandler.middleware.js";
+import authRoutes from "./routes/auth.routes.js";
+import { ApiError } from "./utils/ApiError.js";
+import { connectDB } from "./db/connection.js";
 
+// Create Express app
 const app = express();
 
-app.get("/", (req, res) => {
-  res.send("Hello World!");
+// Connect to MongoDB
+connectDB();
+
+// Apply security middlewares
+configureSecurityMiddleware(app);
+
+// API routes
+app.use("/api/v1/auth", authRoutes);
+
+// Add other routes here as your application grows
+// app.use("/api/v1/users", userRoutes);
+// app.use("/api/v1/students", studentRoutes);
+// app.use("/api/v1/faculty", facultyRoutes);
+// etc.
+
+// Health check route
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "success",
+    message: "ERP system is running",
+    environment: process.env.NODE_ENV,
+    timestamp: new Date(),
+  });
 });
 
-app.get("/hi", (req, res) => {
-  res.send("Hello World!");
+// API documentation route
+app.get("/api/v1/docs", (req, res) => {
+  res.redirect(process.env.API_DOCS_URL || "https://yourerp.edu.in/api-docs");
 });
-app.get("/test", (req, res) => {
-  res.send("Hello World!");
+
+// 404 handler
+app.all("*", (req, res, next) => {
+  next(new ApiError(404, `Route ${req.originalUrl} not found`));
 });
+
+// Global error handler
+app.use(errorHandler);
 
 export default app;
