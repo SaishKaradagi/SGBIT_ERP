@@ -19,28 +19,29 @@ const mailGenerator = new Mailgen({
 
 // Create email templates
 const templates = {
-  // Email verification template
-  "email-verification": (data) => {
-    return {
-      body: {
-        name: data.name,
-        intro:
-          "Welcome to our College ERP System! We're excited to have you on board.",
-        action: {
-          instructions:
-            "To get started, please verify your email address by clicking the button below:",
-          button: {
-            color: "#22BC66", // Optional
-            text: "Verify Your Email",
-            link: data.verificationURL,
-            text: data.verificationURL,
-          },
+
+// Email verification template
+
+"email-verification": (data) => {
+  return {
+    body: {
+      name: data.name,
+      intro:
+        "Welcome to our College ERP System! We're excited to have you on board.",
+      action: {
+        instructions:
+          "To get started, please verify your email address by clicking the button below:",
+        button: {
+          color: "#22BC66", // Optional
+          text: "Verify Your Email",
+          link: data.verificationURL,
         },
-        outro:
-          "If you did not create an account, you can safely ignore this email.",
       },
-    };
-  },
+      outro:
+        "If you did not create an account, you can safely ignore this email.",
+    },
+  };
+},
 
   // Password reset template
   "password-reset": (data) => {

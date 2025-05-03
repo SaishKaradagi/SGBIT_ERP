@@ -11,16 +11,17 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { sendEmail } from "../utils/emailService.js";
 import { rateLimit } from "../utils/rateLimit.js";
 import dotenv from "dotenv";
-import { error } from "console";
 
 dotenv.config();
 
-// Environment variables
-const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
-const JWT_EXPIRY = process.env.JWT_EXPIRY || "1d";
-const JWT_REFRESH_SECRET =
-  process.env.JWT_REFRESH_SECRET || "your-refresh-secret-key";
-const JWT_REFRESH_EXPIRY = process.env.JWT_REFRESH_EXPIRY || "7d";
+// Import environment variables from .env file
+const {
+  JWT_SECRET,
+  JWT_EXPIRY,
+  JWT_REFRESH_SECRET,
+  JWT_REFRESH_EXPIRY,
+  NODE_ENV
+} = process.env;
 
 // Helper function to generate JWT token
 const generateTokens = (userId) => {
@@ -75,27 +76,30 @@ export const registerUser = asyncHandler(async (req, res) => {
     status: "pending",
   });
 
+
   // Generate verification token
   const verificationToken = crypto.randomBytes(32).toString("hex");
+  
+  // Hash the token
   const hashedToken = crypto
     .createHash("sha256")
     .update(verificationToken)
     .digest("hex");
-  // Store verification token and expiry in user's metadata
-  user.metadata.emailVerificationToken = hashedToken;
-  user.metadata.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
-  console.log("🌱 Saving hashed token to DB:", hashedToken);
+    
+  // Store verification token and expiry explicitly
+  user.metadata = {
+    // ...user.metadata,
+    emailVerificationToken: hashedToken,
+    emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000 // 24 hours
+  };
+
+  
 
   await user.save();
-
-  console.log("✅ Saved user token info:");
-  console.log("Token:", user.metadata.emailVerificationToken);
-  console.log("Expires:", user.metadata.emailVerificationExpires);
-
+  console.log(user.metadata);
+ 
   // Send verification email
-  const verificationURL = `${req.protocol}://${req.get(
-    "host",
-  )}/api/v1/auth/verify-email/${verificationToken}`;
+  const verificationURL = `${req.protocol}://${req.get("host")}/api/v1/auth/verify-email/${verificationToken}`;
 
   try {
     await sendEmail({
@@ -125,10 +129,10 @@ export const registerUser = asyncHandler(async (req, res) => {
       ),
     );
   } catch (error) {
-    // Email couldn't be sent, but user is created
     // Reset verification token fields
     user.metadata.emailVerificationToken = undefined;
     user.metadata.emailVerificationExpires = undefined;
+
     await user.save();
 
     return res.status(201).json(
@@ -240,7 +244,7 @@ export const loginUser = asyncHandler(async (req, res) => {
   // Set refresh token in HTTP-only cookie
   const refreshTokenOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: NODE_ENV === "production",
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     sameSite: "strict",
   };
@@ -267,30 +271,28 @@ export const loginUser = asyncHandler(async (req, res) => {
 });
 
 // Verify email
+// Fix for verifyEmail function in auth.Controllers.js
 export const verifyEmail = asyncHandler(async (req, res) => {
   const { token } = req.params;
-
-  // Corrected the typo here
   console.log("🔍 Incoming verification token:", token);
 
   // Hash the token for comparison
   const hashedToken = crypto
     .createHash("sha256")
-    .update(token) // Using token directly from the request params
+    .update(token)
     .digest("hex");
 
-  console.log("🔍 Hashed token:", hashedToken);
-
-  // Find user with the verification token
+  // Perform actual user lookup with token
   const user = await User.findOne({
     "metadata.emailVerificationToken": hashedToken,
     "metadata.emailVerificationExpires": { $gt: Date.now() },
   });
 
   if (!user) {
-    console.log("User not found or token expired", hashedToken);
+    console.log("User not found or token expired with hash:", hashedToken);
     throw new ApiError(400, "Invalid or expired verification token");
   }
+
 
   // Update user status to active if pending
   if (user.status === "pending") {
@@ -322,7 +324,7 @@ export const logoutUser = asyncHandler(async (req, res) => {
   // Clear the refresh token cookie
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: NODE_ENV === "production",
   });
 
   return res
@@ -361,7 +363,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     // Set refresh token in HTTP-only cookie
     const refreshTokenOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: NODE_ENV === "production",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       sameSite: "strict",
     };
@@ -621,3 +623,8 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
     ),
   );
 });
+
+
+
+
+
