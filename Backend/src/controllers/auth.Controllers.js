@@ -76,21 +76,41 @@ export const registerUser = asyncHandler(async (req, res) => {
   });
 
   // Generate verification token
+  // Enhanced token generation and storage in registerUser function
+  // Add this code where you generate the verification token
+
+  // Generate verification token
   const verificationToken = crypto.randomBytes(32).toString("hex");
   const hashedToken = crypto
     .createHash("sha256")
     .update(verificationToken)
     .digest("hex");
+
+  // Make sure metadata object exists before using it
+  if (!user.metadata) {
+    user.metadata = {};
+  }
+
   // Store verification token and expiry in user's metadata
   user.metadata.emailVerificationToken = hashedToken;
   user.metadata.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
-  console.log("🌱 Saving hashed token to DB:", hashedToken);
+
+  // Verify token was saved correctly before sending email
+  console.log("⚙️ Verification data before save:");
+  console.log("Token:", verificationToken); // Original token
+  console.log("Hashed:", hashedToken); // Hashed token for DB
 
   await user.save();
 
-  console.log("✅ Saved user token info:");
-  console.log("Token:", user.metadata.emailVerificationToken);
-  console.log("Expires:", user.metadata.emailVerificationExpires);
+  // Verify token was properly saved to database
+  const savedUser = await User.findById(user._id);
+  console.log("📊 Verification data after save:");
+  console.log("Saved token:", savedUser.metadata?.emailVerificationToken);
+  console.log("Saved expiry:", savedUser.metadata?.emailVerificationExpires);
+  console.log(
+    "Token match:",
+    savedUser.metadata?.emailVerificationToken === hashedToken,
+  );
 
   // Send verification email
   const verificationURL = `${req.protocol}://${req.get(
@@ -267,30 +287,48 @@ export const loginUser = asyncHandler(async (req, res) => {
 });
 
 // Verify email
+// Verify email
 export const verifyEmail = asyncHandler(async (req, res) => {
   const { token } = req.params;
 
-  // Corrected the typo here
   console.log("🔍 Incoming verification token:", token);
 
   // Hash the token for comparison
-  const hashedToken = crypto
-    .createHash("sha256")
-    .update(token) // Using token directly from the request params
-    .digest("hex");
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
   console.log("🔍 Hashed token:", hashedToken);
 
-  // Find user with the verification token
+  // Find user with the verification token - debug the query separately
+  console.log("🔍 Searching for user with token:", hashedToken);
+
+  // Verify that the token exists in the database
+  const checkUser = await User.findOne({
+    "metadata.emailVerificationToken": hashedToken,
+  });
+
+  console.log("🔍 User found by token only:", checkUser ? "Yes" : "No");
+
+  // Verify that the expiration time is valid
+  const timeCheckUser = await User.findOne({
+    "metadata.emailVerificationExpires": { $gt: Date.now() },
+  });
+
+  console.log("🔍 User found by expiry only:", timeCheckUser ? "Yes" : "No");
+
+  // Now try the full query
   const user = await User.findOne({
     "metadata.emailVerificationToken": hashedToken,
     "metadata.emailVerificationExpires": { $gt: Date.now() },
   });
 
+  console.log("🔍 User found with both conditions:", user ? "Yes" : "No");
+
   if (!user) {
-    console.log("User not found or token expired", hashedToken);
+    console.log("❌ User not found or token expired");
     throw new ApiError(400, "Invalid or expired verification token");
   }
+
+  console.log("✅ User found, verifying email for:", user.email);
 
   // Update user status to active if pending
   if (user.status === "pending") {
@@ -305,6 +343,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
   user.metadata.emailVerificationExpires = undefined;
 
   await user.save();
+  console.log("✅ User email verified successfully");
 
   return res
     .status(200)
@@ -316,7 +355,6 @@ export const verifyEmail = asyncHandler(async (req, res) => {
       ),
     );
 });
-
 // Logout user
 export const logoutUser = asyncHandler(async (req, res) => {
   // Clear the refresh token cookie

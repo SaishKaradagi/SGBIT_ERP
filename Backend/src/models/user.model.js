@@ -248,8 +248,8 @@ const userSchema = new mongoose.Schema(
     },
     // User Preferences
     metadata: {
-      type: mongoose.Schema.Types.Mixed,
-      default: {},
+      type: Object,
+      default: {}, // or Map
     },
   },
   {
