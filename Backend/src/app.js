@@ -5,6 +5,7 @@ import { errorHandler } from "./middlewares/errorHandler.middleware.js";
 import authRoutes from "./routes/auth.routes.js";
 import { ApiError } from "./utils/ApiError.js";
 import { connectDB } from "./db/connection.js";
+import net from "net";
 
 // Create Express app
 const app = express();
@@ -42,6 +43,19 @@ app.get("/api/v1/docs", (req, res) => {
 // 404 handler
 app.all("*", (req, res, next) => {
   next(new ApiError(404, `Route ${req.originalUrl} not found`));
+});
+
+// test-mailtrap-connection.js
+
+const socket = net.createConnection(2525, "smtp.mailtrap.io");
+
+socket.on("connect", () => {
+  console.log("✅ Connected to Mailtrap");
+  socket.end();
+});
+
+socket.on("error", (err) => {
+  console.error("❌ Connection error:", err);
 });
 
 // Global error handler

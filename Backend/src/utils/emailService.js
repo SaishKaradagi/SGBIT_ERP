@@ -1,6 +1,7 @@
 // emailService.js
 import nodemailer from "nodemailer";
 import Mailgen from "mailgen";
+import { text } from "express";
 
 /**
  * Email sending service using Nodemailer and Mailgen
@@ -32,6 +33,7 @@ const templates = {
             color: "#22BC66", // Optional
             text: "Verify Your Email",
             link: data.verificationURL,
+            text: data.verificationURL,
           },
         },
         outro:
@@ -104,12 +106,13 @@ export const sendEmail = async (options) => {
     // Configure transporter
     // For production, use your actual SMTP service
     // For development/testing, use Mailtrap or similar
+    // Looking to send emails in production? Check out our Email API/SMTP product!
     const transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST || "smtp.mailtrap.io",
-      port: process.env.EMAIL_PORT || 2525,
+      host: "sandbox.smtp.mailtrap.io",
+      port: 2525,
       auth: {
-        user: process.env.EMAIL_USER || "c0648e12077711",
-        pass: process.env.EMAIL_PASS || "99a3d500c274bf",
+        user: "6f6a29e988e899",
+        pass: "7fc0bdd4c137b2",
       },
     });
 

@@ -6,7 +6,7 @@ import User from "../models/user.model.js";
 import AdminPrivilege from "../models/adminPrivilege.model.js";
 import Admin from "../models/admin.model.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
+const JWT_SECRET = "your-super-secret-jwt-key";
 
 // Middleware to verify JWT token
 export const verifyJWT = asyncHandler(async (req, res, next) => {

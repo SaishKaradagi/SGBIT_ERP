@@ -11,6 +11,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { sendEmail } from "../utils/emailService.js";
 import { rateLimit } from "../utils/rateLimit.js";
 import dotenv from "dotenv";
+import { error } from "console";
 
 dotenv.config();
 
@@ -76,15 +77,20 @@ export const registerUser = asyncHandler(async (req, res) => {
 
   // Generate verification token
   const verificationToken = crypto.randomBytes(32).toString("hex");
-
-  // Store verification token and expiry in user's metadata
-  user.metadata.emailVerificationToken = crypto
+  const hashedToken = crypto
     .createHash("sha256")
     .update(verificationToken)
     .digest("hex");
+  // Store verification token and expiry in user's metadata
+  user.metadata.emailVerificationToken = hashedToken;
   user.metadata.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  console.log("🌱 Saving hashed token to DB:", hashedToken);
 
   await user.save();
+
+  console.log("✅ Saved user token info:");
+  console.log("Token:", user.metadata.emailVerificationToken);
+  console.log("Expires:", user.metadata.emailVerificationExpires);
 
   // Send verification email
   const verificationURL = `${req.protocol}://${req.get(
@@ -264,8 +270,16 @@ export const loginUser = asyncHandler(async (req, res) => {
 export const verifyEmail = asyncHandler(async (req, res) => {
   const { token } = req.params;
 
+  // Corrected the typo here
+  console.log("🔍 Incoming verification token:", token);
+
   // Hash the token for comparison
-  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(token) // Using token directly from the request params
+    .digest("hex");
+
+  console.log("🔍 Hashed token:", hashedToken);
 
   // Find user with the verification token
   const user = await User.findOne({
@@ -274,6 +288,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
   });
 
   if (!user) {
+    console.log("User not found or token expired", hashedToken);
     throw new ApiError(400, "Invalid or expired verification token");
   }
 
