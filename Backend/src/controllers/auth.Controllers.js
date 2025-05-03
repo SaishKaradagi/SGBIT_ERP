@@ -11,16 +11,17 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { sendEmail } from "../utils/emailService.js";
 import { rateLimit } from "../utils/rateLimit.js";
 import dotenv from "dotenv";
-import { error } from "console";
 
 dotenv.config();
 
-// Environment variables
-const JWT_SECRET = process.env.JWT_SECRET || "your-super-secret-jwt-key";
-const JWT_EXPIRY = process.env.JWT_EXPIRY || "1d";
-const JWT_REFRESH_SECRET =
-  process.env.JWT_REFRESH_SECRET || "your-refresh-secret-key";
-const JWT_REFRESH_EXPIRY = process.env.JWT_REFRESH_EXPIRY || "7d";
+// Import environment variables from .env file
+const {
+  JWT_SECRET,
+  JWT_EXPIRY,
+  JWT_REFRESH_SECRET,
+  JWT_REFRESH_EXPIRY,
+  NODE_ENV,
+} = process.env;
 
 // Helper function to generate JWT token
 const generateTokens = (userId) => {
@@ -76,46 +77,26 @@ export const registerUser = asyncHandler(async (req, res) => {
   });
 
   // Generate verification token
-  // Enhanced token generation and storage in registerUser function
-  // Add this code where you generate the verification token
-
-  // Generate verification token
   const verificationToken = crypto.randomBytes(32).toString("hex");
+
+  // Hash the token
   const hashedToken = crypto
     .createHash("sha256")
     .update(verificationToken)
     .digest("hex");
-
-  // Make sure metadata object exists before using it
-  if (!user.metadata) {
-    user.metadata = {};
-  }
-
   // Store verification token and expiry in user's metadata
   user.metadata.emailVerificationToken = hashedToken;
   user.metadata.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
-
-  // Verify token was saved correctly before sending email
-  console.log("⚙️ Verification data before save:");
-  console.log("Token:", verificationToken); // Original token
-  console.log("Hashed:", hashedToken); // Hashed token for DB
+  console.log("🌱 Saving hashed token to DB:", hashedToken);
 
   await user.save();
 
-  // Verify token was properly saved to database
-  const savedUser = await User.findById(user._id);
-  console.log("📊 Verification data after save:");
-  console.log("Saved token:", savedUser.metadata?.emailVerificationToken);
-  console.log("Saved expiry:", savedUser.metadata?.emailVerificationExpires);
-  console.log(
-    "Token match:",
-    savedUser.metadata?.emailVerificationToken === hashedToken,
-  );
+  console.log("✅ Saved user token info:");
+  console.log("Token:", user.metadata.emailVerificationToken);
+  console.log("Expires:", user.metadata.emailVerificationExpires);
 
   // Send verification email
-  const verificationURL = `${req.protocol}://${req.get(
-    "host",
-  )}/api/v1/auth/verify-email/${verificationToken}`;
+  const verificationURL = `${req.protocol}://${req.get("host")}/api/v1/auth/verify-email/${verificationToken}`;
 
   try {
     await sendEmail({
@@ -145,10 +126,10 @@ export const registerUser = asyncHandler(async (req, res) => {
       ),
     );
   } catch (error) {
-    // Email couldn't be sent, but user is created
     // Reset verification token fields
     user.metadata.emailVerificationToken = undefined;
     user.metadata.emailVerificationExpires = undefined;
+
     await user.save();
 
     return res.status(201).json(
@@ -260,7 +241,7 @@ export const loginUser = asyncHandler(async (req, res) => {
   // Set refresh token in HTTP-only cookie
   const refreshTokenOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: NODE_ENV === "production",
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     sameSite: "strict",
   };
@@ -288,34 +269,22 @@ export const loginUser = asyncHandler(async (req, res) => {
 
 // Verify email
 // Verify email
+// Fix for verifyEmail function in auth.Controllers.js
 export const verifyEmail = asyncHandler(async (req, res) => {
   const { token } = req.params;
 
+  // Corrected the typo here
   console.log("🔍 Incoming verification token:", token);
 
   // Hash the token for comparison
-  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+  const hashedToken = crypto
+    .createHash("sha256")
+    .update(token) // Using token directly from the request params
+    .digest("hex");
 
   console.log("🔍 Hashed token:", hashedToken);
 
-  // Find user with the verification token - debug the query separately
-  console.log("🔍 Searching for user with token:", hashedToken);
-
-  // Verify that the token exists in the database
-  const checkUser = await User.findOne({
-    "metadata.emailVerificationToken": hashedToken,
-  });
-
-  console.log("🔍 User found by token only:", checkUser ? "Yes" : "No");
-
-  // Verify that the expiration time is valid
-  const timeCheckUser = await User.findOne({
-    "metadata.emailVerificationExpires": { $gt: Date.now() },
-  });
-
-  console.log("🔍 User found by expiry only:", timeCheckUser ? "Yes" : "No");
-
-  // Now try the full query
+  // Find user with the verification token
   const user = await User.findOne({
     "metadata.emailVerificationToken": hashedToken,
     "metadata.emailVerificationExpires": { $gt: Date.now() },
@@ -324,11 +293,9 @@ export const verifyEmail = asyncHandler(async (req, res) => {
   console.log("🔍 User found with both conditions:", user ? "Yes" : "No");
 
   if (!user) {
-    console.log("❌ User not found or token expired");
+    console.log("User not found or token expired", hashedToken);
     throw new ApiError(400, "Invalid or expired verification token");
   }
-
-  console.log("✅ User found, verifying email for:", user.email);
 
   // Update user status to active if pending
   if (user.status === "pending") {
@@ -360,7 +327,7 @@ export const logoutUser = asyncHandler(async (req, res) => {
   // Clear the refresh token cookie
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: NODE_ENV === "production",
   });
 
   return res
@@ -399,7 +366,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     // Set refresh token in HTTP-only cookie
     const refreshTokenOptions = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: NODE_ENV === "production",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       sameSite: "strict",
     };
