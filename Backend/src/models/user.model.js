@@ -14,12 +14,6 @@ const userSchema = new mongoose.Schema(
       immutable: true,
       index: true,
     },
-    // user: {
-    //   type: mongoose.Schema.Types.ObjectId,
-    //   ref: "User", // <-- Reference to the User model
-    //   required: true,
-    //   unique: true,
-    // },
     // Personal Information
     firstName: {
       type: String,
@@ -260,7 +254,7 @@ const userSchema = new mongoose.Schema(
 );
 
 // Indexes for better performance
-userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ email: 1 });
 userSchema.index({ role: 1, status: 1 });
 
 // Virtuals
