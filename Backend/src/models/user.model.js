@@ -115,14 +115,6 @@ const userSchema = new mongoose.Schema(
         },
       ],
       select: false,
-      validate: [
-        {
-          validator: function (v) {
-            return v.length <= 3; // Keep only last 5 password hashes
-          },
-          message: "Too many password history entries",
-        },
-      ],
     },
     dob: {
       type: Date,

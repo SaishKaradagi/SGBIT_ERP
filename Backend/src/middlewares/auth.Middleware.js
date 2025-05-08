@@ -6,13 +6,27 @@ import User from "../models/user.model.js";
 import AdminPrivilege from "../models/adminPrivilege.model.js";
 import Admin from "../models/admin.model.js";
 
-const JWT_SECRET = "your-super-secret-jwt-key";
+import dotenv from "dotenv";
+
+dotenv.config();
+const { JWT_SECRET } = process.env;
 
 // Middleware to verify JWT token
 export const verifyJWT = asyncHandler(async (req, res, next) => {
   // Get token from Authorization header
   console.log("HEADERS:", req.headers);
-  const token = req.headers.authorization?.split(" ")[1];
+  let token;
+
+  // Prefer Authorization header
+  if (req.headers.authorization?.startsWith("Bearer ")) {
+    token = req.headers.authorization.split(" ")[1];
+  }
+
+  // Fallback to cookie
+  else if (req.cookies?.accessToken || req.cookies?.refreshToken) {
+    // Use accessToken for normal auth, fallback to refreshToken only if intentional
+    token = req.cookies.accessToken || req.cookies.refreshToken;
+  }
 
   if (!token) {
     throw new ApiError(401, "Unauthorized access - No token provided");

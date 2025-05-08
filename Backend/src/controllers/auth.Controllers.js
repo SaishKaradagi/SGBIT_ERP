@@ -85,9 +85,19 @@ export const registerUser = asyncHandler(async (req, res) => {
     .update(verificationToken)
     .digest("hex");
   // Store verification token and expiry in user's metadata
-  user.metadata.emailVerificationToken = hashedToken;
-  user.metadata.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
-  console.log("🌱 Saving hashed token to DB:", hashedToken);
+  user.metadata = {
+    // ...user.metadata,
+
+    emailVerificationToken: hashedToken,
+
+    emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+  };
+
+  console.log("✅ Saved user token info:");
+
+  console.log("Token:", user.metadata.emailVerificationToken);
+
+  console.log("Expires:", user.metadata.emailVerificationExpires);
 
   await user.save();
 
@@ -241,13 +251,42 @@ export const loginUser = asyncHandler(async (req, res) => {
   // Set refresh token in HTTP-only cookie
   const refreshTokenOptions = {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     secure: NODE_ENV === "production",
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     sameSite: "strict",
   };
 
+  //   return res
+  //     .status(200)
+  //     .cookie("refreshToken", refreshToken, refreshTokenOptions)
+  //     .json(
+  //       new ApiResponse(
+  //         200,
+  //         {
+  //           user: {
+  //             id: user._id,
+  //             uuid: user.uuid,
+  //             name: user.fullName,
+  //             email: user.email,
+  //             role: user.role,
+  //           },
+  //           token,
+  //         },
+  //         "Logged in successfully",
+  //       ),
+  //     );
+  // });
+
+  // To this:
   return res
     .status(200)
+    .cookie("accessToken", token, {
+      httpOnly: true,
+      secure: NODE_ENV === "production",
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours (or match your JWT_EXPIRY)
+      sameSite: "strict",
+    })
     .cookie("refreshToken", refreshToken, refreshTokenOptions)
     .json(
       new ApiResponse(
@@ -260,7 +299,7 @@ export const loginUser = asyncHandler(async (req, res) => {
             email: user.email,
             role: user.role,
           },
-          token,
+          token, // You can still send the token in the response body
         },
         "Logged in successfully",
       ),
@@ -330,7 +369,20 @@ export const logoutUser = asyncHandler(async (req, res) => {
     secure: NODE_ENV === "production",
   });
 
+  //   return res
+  //     .status(200)
+  //     .json(new ApiResponse(200, {}, "Logged out successfully"));
+  // });
+
   return res
+    .clearCookie("accessToken", {
+      httpOnly: true,
+      secure: NODE_ENV === "production",
+    })
+    .clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: NODE_ENV === "production",
+    })
     .status(200)
     .json(new ApiResponse(200, {}, "Logged out successfully"));
 });
@@ -371,8 +423,23 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
       sameSite: "strict",
     };
 
+    //     return res
+    //       .status(200)
+    //       .cookie("refreshToken", refreshToken, refreshTokenOptions)
+    //       .json(new ApiResponse(200, { token }, "Access token refreshed"));
+    //   } catch (error) {
+    //     throw new ApiError(401, error.message || "Invalid refresh token");
+    //   }
+    // });
+
     return res
       .status(200)
+      .cookie("accessToken", token, {
+        httpOnly: true,
+        secure: NODE_ENV === "production",
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours (or match your JWT_EXPIRY)
+        sameSite: "strict",
+      })
       .cookie("refreshToken", refreshToken, refreshTokenOptions)
       .json(new ApiResponse(200, { token }, "Access token refreshed"));
   } catch (error) {
@@ -481,14 +548,25 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   const resetToken = crypto.randomBytes(32).toString("hex");
 
   // Hash and save the token
-  user.metadata.passwordResetToken = crypto
-    .createHash("sha256")
-    .update(resetToken)
-    .digest("hex");
+  // user.metadata.passwordResetToken = crypto
+  //   .createHash("sha256")
+  //   .update(resetToken)
+  //   .digest("hex");
+  user.metadata = {
+    // ...user.metadata,
 
-  user.metadata.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+    passwordResetToken: crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex"),
+    passwordResetExpires: Date.now() + 15 * 60 * 1000, // 15 minutes
+  };
+  // user.metadata.passwordResetExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
 
   await user.save();
+
+  console.log("🔍 Password reset token:", resetToken);
+  console.log("🔍 Hashed token:", user.metadata.passwordResetToken);
 
   // Generate reset URL
   const resetURL = `${req.protocol}://${req.get(
@@ -543,6 +621,15 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
   if (!user) {
     throw new ApiError(400, "Invalid or expired password reset token");
+  }
+
+  // ✅ Compare hashed password
+  const isSameAsCurrent = await bcrypt.compare(password, user.password);
+  if (isSameAsCurrent) {
+    throw new ApiError(
+      400,
+      "New password cannot be the same as the current password",
+    );
   }
 
   // Update password

@@ -33,5 +33,6 @@ router.use(verifyJWT); // Apply JWT verification to all routes below
 router.get("/me", getCurrentUser);
 router.post("/logout", logoutUser);
 router.post("/change-password", verifiedEmailOnly, changePassword);
+router.get("/getCurrentUser", verifiedEmailOnly, getCurrentUser);
 
 export default router;
