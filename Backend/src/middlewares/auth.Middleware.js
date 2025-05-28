@@ -5,6 +5,8 @@ import { ApiError } from "../utils/ApiError.js";
 import User from "../models/user.model.js";
 import AdminPrivilege from "../models/adminPrivilege.model.js";
 import Admin from "../models/admin.model.js";
+import mongoose from "mongoose";
+import Department from "../models/department.model.js";
 
 import dotenv from "dotenv";
 
@@ -57,7 +59,11 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
     }
 
     // Attach user to request object
-    req.user = user;
+    req.user = {
+      _id: user._id,
+      email: user.email,
+      role: user.role, // <- make sure this is included!
+    };
     next();
   } catch (error) {
     if (error instanceof ApiError) {
@@ -69,9 +75,15 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
 
 // Middleware to check roles
 export const restrictTo = (...roles) => {
+  const allowedRoles = roles.map((role) => role.toLowerCase());
+
   return asyncHandler(async (req, res, next) => {
-    // Check if user has required role
-    if (!roles.includes(req.user.role)) {
+    const userRole = req.user?.role?.toLowerCase();
+
+    console.log("🔍 User role:", userRole);
+    console.log("🔒 Allowed roles:", allowedRoles);
+
+    if (!userRole || !allowedRoles.includes(userRole)) {
       throw new ApiError(
         403,
         "You do not have permission to perform this action",
@@ -82,10 +94,11 @@ export const restrictTo = (...roles) => {
   });
 };
 
-// Middleware to check permissions for admin users
+// Enhance the admin permission middleware to also handle department-scoped permissions
 export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
   return asyncHandler(async (req, res, next) => {
     const user = req.user;
+    console.log("User:", user);
 
     // Only applicable to admin roles
     if (!["admin", "superAdmin"].includes(user.role)) {
@@ -95,14 +108,13 @@ export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
       );
     }
 
-    // SuperAdmins have all privileges
-    if (user.role === "superAdmin") {
+    // SuperAdmins bypass all checks
+    if (user.role.toLowerCase() === "superadmin") {
       return next();
     }
 
-    // Find the admin record
+    // Get the admin record
     const admin = await Admin.findOne({ user: user._id });
-
     if (!admin) {
       throw new ApiError(
         403,
@@ -110,17 +122,77 @@ export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
       );
     }
 
-    // Check privileges
-    const hasPrivilege = await AdminPrivilege.hasPrivilege(
-      admin._id,
-      privilege,
-      scope,
+    console.log("Admin record:", admin);
+
+    const targetDepartmentId = req.body.departmentId || req.params.departmentId;
+    console.log("Target Department ID:", targetDepartmentId);
+
+    let targetDeptUpper = null;
+
+    // Convert departmentId to departmentCode (uppercase)
+    if (
+      targetDepartmentId &&
+      mongoose.Types.ObjectId.isValid(targetDepartmentId._id)
+    ) {
+      const dept = await Department.findById(targetDepartmentId._id);
+      if (!dept || !dept.departmentCode) {
+        throw new ApiError(
+          400,
+          "Invalid or misconfigured department: missing department code.",
+        );
+      }
+      targetDeptUpper = dept.departmentCode.toUpperCase();
+    } else if (typeof targetDepartmentId === "string") {
+      targetDeptUpper = targetDepartmentId.toUpperCase(); // If departmentCode is passed directly
+    }
+
+    // Query admin privileges by user ID first
+    let allPrivileges = await AdminPrivilege.find({
+      admin: user._id.toString(),
+    });
+
+    // Fallback to admin._id if nothing found
+    if (allPrivileges.length === 0) {
+      const fallbackPrivileges = await AdminPrivilege.find({
+        admin: admin._id.toString(),
+      });
+      allPrivileges.push(...fallbackPrivileges);
+    }
+
+    // Final fallback: full scan
+    if (allPrivileges.length === 0) {
+      const allRecords = await AdminPrivilege.find({});
+      const userIdStr = user._id.toString();
+      const adminIdStr = admin._id.toString();
+      const matches = allRecords.filter((rec) => {
+        const adminStr =
+          typeof rec.admin === "object" ? rec.admin.toString() : rec.admin;
+        return adminStr === userIdStr || adminStr === adminIdStr;
+      });
+      allPrivileges.push(...matches);
+    }
+
+    // Perform the actual privilege check
+    const hasPrivilege = allPrivileges.some((p) => {
+      const scopeUpper = p.scope.toUpperCase();
+      const privileges = Array.isArray(p.privilege)
+        ? p.privilege
+        : [p.privilege];
+      return (
+        privileges.includes(privilege) &&
+        (scopeUpper === "GLOBAL" ||
+          (targetDeptUpper && scopeUpper === targetDeptUpper))
+      );
+    });
+
+    console.log(
+      `Permission check for ${privilege} in scope ${targetDeptUpper || "GLOBAL"}: ${hasPrivilege}`,
     );
 
     if (!hasPrivilege) {
       throw new ApiError(
         403,
-        "You do not have the required privileges to perform this action",
+        "You do not have the required privileges for this department",
       );
     }
 
@@ -129,6 +201,8 @@ export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
 };
 
 // Middleware for faculty-specific permissions
+// Enhanced version of hasFacultyPermission middleware
+// With department-based permissions logic
 export const hasFacultyPermission = (departmentCheck = false) => {
   return asyncHandler(async (req, res, next) => {
     const user = req.user;
@@ -141,19 +215,64 @@ export const hasFacultyPermission = (departmentCheck = false) => {
       );
     }
 
-    // If departmentCheck is true, verify if faculty belongs to the requested department
+    // If departmentCheck is true, verify department relationship
     if (departmentCheck) {
-      // Logic to check if faculty belongs to the department in request
-      // This would depend on your specific implementation
-      // Example:
-      // const { departmentId } = req.params;
-      // const faculty = await Faculty.findOne({ user: user._id });
-      // if (!faculty || faculty.department.toString() !== departmentId) {
-      //   throw new ApiError(
-      //     403,
-      //     "You do not have permission to access this department"
-      //   );
-      // }
+      const Faculty = mongoose.model("Faculty");
+      const Department = mongoose.model("Department");
+
+      // Get the current user's faculty record
+      const faculty = await Faculty.findOne({ user: user._id });
+
+      if (!faculty) {
+        throw new ApiError(
+          403,
+          "Faculty record not found. Please contact administrator.",
+        );
+      }
+
+      // Extract department ID - either from request body (for new users) or from params
+      const targetDepartmentId =
+        req.body.departmentId || req.params.departmentId;
+
+      if (!targetDepartmentId) {
+        throw new ApiError(
+          400,
+          "Department ID is required when creating users",
+        );
+      }
+
+      // For HODs, check if they are the HOD of the target department
+      if (user.role === "hod") {
+        const department = await Department.findOne({
+          _id: targetDepartmentId,
+          hod: faculty._id,
+        });
+
+        if (!department) {
+          throw new ApiError(
+            403,
+            "You can only create users for departments where you are the HOD",
+          );
+        }
+      }
+      // For regular faculty, check if they belong to the department
+      else if (user.role === "faculty") {
+        if (faculty.department.toString() !== targetDepartmentId.toString()) {
+          throw new ApiError(
+            403,
+            "You can only create users for your own department",
+          );
+        }
+
+        // Check if the faculty member is a Class Teacher or Proctor
+        // This check assumes you have a field indicating this role in the Faculty model
+        if (!faculty.isClassTeacher && !faculty.isProctor) {
+          throw new ApiError(
+            403,
+            "Only Class Teachers or Proctors can create student accounts",
+          );
+        }
+      }
     }
 
     next();

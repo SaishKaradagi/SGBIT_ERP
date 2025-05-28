@@ -1,4 +1,5 @@
 // auth.Controllers.js
+import mongoose from "mongoose";
 import User from "../models/user.model.js";
 import Admin from "../models/admin.model.js";
 import AdminPrivilege from "../models/adminPrivilege.model.js";
@@ -11,6 +12,8 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { sendEmail } from "../utils/emailService.js";
 import { rateLimit } from "../utils/rateLimit.js";
 import dotenv from "dotenv";
+// import Department from "../models/department.model.js";
+import Faculty from "../models/faculty.model.js";
 
 dotenv.config();
 
@@ -36,19 +39,24 @@ const generateTokens = (userId) => {
   return { token, refreshToken };
 };
 
-// Register a new user
-export const registerUser = asyncHandler(async (req, res) => {
+// Fix for createSuperAdmin function in auth.Controllers.js
+export const createSuperAdmin = asyncHandler(async (req, res) => {
   const {
     firstName,
     middleName,
     lastName,
     email,
     password,
-    role,
     dob,
     gender,
     phone,
+    designation,
   } = req.body;
+
+  // Check if request is from another Super Admin (if not initialization)
+  if (req.user && req.user.role !== "superAdmin") {
+    throw new ApiError(403, "Only Super Admins can create other Super Admins");
+  }
 
   // Check if user with the same email already exists
   const existingUser = await User.findOne({ email });
@@ -56,109 +64,466 @@ export const registerUser = asyncHandler(async (req, res) => {
     throw new ApiError(409, "User with this email already exists");
   }
 
-  // Check if role is valid for self-registration
-  const allowedRoles = ["student", "faculty", "staff", "guest"];
-  if (!allowedRoles.includes(role)) {
-    throw new ApiError(403, "Cannot self-register with the requested role");
-  }
-
-  // Create user with initial status as pending
+  // Create user with SuperAdmin role and active status
   const user = await User.create({
     firstName,
     middleName,
     lastName,
     email,
     password, // Will be hashed in the pre-save hook
-    role,
+    role: "superAdmin",
     dob: new Date(dob),
     gender,
     phone,
-    status: "pending",
+    status: "active", // Super Admins are immediately active
+    isEmailVerified: true, // Auto-verify Super Admin email
+    createdBy: req.user ? req.user._id : null, // Track creator if not initialization
   });
 
-  // Generate verification token
-  const verificationToken = crypto.randomBytes(32).toString("hex");
+  // Create admin record for the Super Admin
+  try {
+    const Admin = mongoose.model("Admin");
+    const admin = await Admin.create({
+      user: user._id,
+      isSuperAdmin: true,
+      // Add other required admin fields
+    });
 
-  // Hash the token
+    // Generate tokens if response is needed
+    const { token, refreshToken } = generateTokens(user._id);
+
+    if (res) {
+      return res.status(201).json(
+        new ApiResponse(
+          201,
+          {
+            user: {
+              id: user._id,
+              uuid: user.uuid,
+              name: user.fullName,
+              email: user.email,
+              role: user.role,
+              status: user.status,
+            },
+            token,
+            refreshToken,
+          },
+          "Super Admin created successfully",
+        ),
+      );
+    }
+
+    return { user, admin };
+  } catch (error) {
+    // If admin record creation fails, delete the user
+    await User.findByIdAndDelete(user._id);
+    throw new ApiError(
+      500,
+      `Error creating Super Admin record: ${error.message}`,
+    );
+  }
+});
+
+// Initialize Super Admin - utility function for system initialization
+// Fix for initializeSuperAdmin function
+export const initializeSuperAdmin = async (superAdminDetails) => {
+  try {
+    // Check if any Super Admin already exists
+    const existingSuperAdmin = await User.findOne({ role: "superAdmin" });
+
+    if (existingSuperAdmin) {
+      console.log("✅ Super Admin already exists, skipping initialization");
+      return { success: true, message: "Super Admin already exists" };
+    }
+
+    // Create the first Super Admin
+    const result = await createSuperAdmin({
+      body: superAdminDetails,
+      user: null, // Explicitly set user to null for initialization
+    });
+
+    // Check if the result contains user and admin
+    if (!result || !result.user) {
+      throw new Error("Failed to create Super Admin - no user returned");
+    }
+
+    console.log(`✅ Initial Super Admin created: ${result.user.email}`);
+    return {
+      success: true,
+      message: "Super Admin initialized successfully",
+      user: {
+        id: result.user._id,
+        email: result.user.email,
+        name: result.user.fullName,
+      },
+    };
+  } catch (error) {
+    console.error("❌ Failed to initialize Super Admin:", error);
+    return { success: false, message: error.message };
+  }
+};
+
+// // Register a new user
+// export const registerUser = asyncHandler(async (req, res) => {
+//   const {
+//     firstName,
+//     middleName,
+//     lastName,
+//     email,
+//     password,
+//     role,
+//     dob,
+//     gender,
+//     phone,
+//   } = req.body;
+
+//   // Check if user with the same email already exists
+//   const existingUser = await User.findOne({ email });
+//   if (existingUser) {
+//     throw new ApiError(409, "User with this email already exists");
+//   }
+
+//   // Check if role is valid for self-registration
+//   const allowedRoles = ["student", "faculty", "staff", "guest"];
+//   if (!allowedRoles.includes(role)) {
+//     throw new ApiError(403, "Cannot self-register with the requested role");
+//   }
+
+//   // Create user with initial status as pending
+//   const user = await User.create({
+//     firstName,
+//     middleName,
+//     lastName,
+//     email,
+//     password, // Will be hashed in the pre-save hook
+//     role,
+//     dob: new Date(dob),
+//     gender,
+//     phone,
+//     status: "pending",
+//   });
+
+//   // Generate verification token
+//   const verificationToken = crypto.randomBytes(32).toString("hex");
+
+//   // Hash the token
+//   const hashedToken = crypto
+//     .createHash("sha256")
+//     .update(verificationToken)
+//     .digest("hex");
+//   // Store verification token and expiry in user's metadata
+//   user.metadata = {
+//     // ...user.metadata,
+
+//     emailVerificationToken: hashedToken,
+
+//     emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+//   };
+
+//   console.log("✅ Saved user token info:");
+
+//   console.log("Token:", user.metadata.emailVerificationToken);
+
+//   console.log("Expires:", user.metadata.emailVerificationExpires);
+
+//   await user.save();
+
+//   console.log("✅ Saved user token info:");
+//   console.log("Token:", user.metadata.emailVerificationToken);
+//   console.log("Expires:", user.metadata.emailVerificationExpires);
+
+//   // Send verification email
+//   const verificationURL = `${req.protocol}://${req.get("host")}/api/v1/auth/verify-email/${verificationToken}`;
+
+//   try {
+//     await sendEmail({
+//       email: user.email,
+//       subject: "Email Verification",
+//       template: "email-verification",
+//       data: {
+//         name: user.firstName,
+//         verificationURL,
+//       },
+//     });
+
+//     return res.status(201).json(
+//       new ApiResponse(
+//         201,
+//         {
+//           user: {
+//             id: user._id,
+//             uuid: user.uuid,
+//             name: user.fullName,
+//             email: user.email,
+//             role: user.role,
+//             status: user.status,
+//           },
+//         },
+//         "User registered successfully. Please verify your email.",
+//       ),
+//     );
+//   } catch (error) {
+//     // Reset verification token fields
+//     user.metadata.emailVerificationToken = undefined;
+//     user.metadata.emailVerificationExpires = undefined;
+
+//     await user.save();
+
+//     return res.status(201).json(
+//       new ApiResponse(
+//         201,
+//         {
+//           user: {
+//             id: user._id,
+//             uuid: user.uuid,
+//             name: user.fullName,
+//             email: user.email,
+//             role: user.role,
+//             status: user.status,
+//           },
+//         },
+//         "User registered successfully but email verification could not be sent.",
+//       ),
+//     );
+//   }
+// });
+
+// Enhanced createUser function with department validation
+export const createUser = asyncHandler(async (req, res) => {
+  const {
+    firstName,
+    middleName,
+    lastName,
+    email,
+    password,
+    role: requestedRole,
+    dob,
+    gender,
+    phone,
+    departmentId,
+    departmentScope = [],
+    designation,
+    facultyId,
+    isProctorOrAdvisor,
+    isActive,
+    dateOfJoining,
+    dateOfRelieving,
+    tenureStatus,
+    qualification,
+    employeeId,
+    specialization,
+    employmentType,
+  } = req.body;
+
+  const User = mongoose.model("User");
+  const Department = mongoose.model("Department");
+
+  // 1. Email Duplication Check
+  const existingUser = await User.findOne({ email });
+  if (existingUser) {
+    throw new ApiError(409, "User with this email already exists");
+  }
+
+  // 2. Role-based Authorization
+  const creatorRole = req.user.role.toLowerCase();
+  // const requestedRole = req.body.role.toLowerCase();
+  const rolePermissions = {
+    superadmin: ["admin", "hod", "faculty", "student", "staff"],
+    admin: ["hod", "faculty", "student", "staff"],
+    hod: ["faculty", "student"],
+    faculty: ["student"],
+  };
+
+  if (
+    !rolePermissions[creatorRole] ||
+    !rolePermissions[creatorRole].includes(requestedRole.toLowerCase())
+  ) {
+    throw new ApiError(
+      403,
+      `${creatorRole} cannot create users with ${requestedRole} role`,
+    );
+  }
+
+  // 3. Validate departmentId if role is department-based
+  if (["hod", "faculty", "student"].includes(requestedRole)) {
+    if (!departmentId) {
+      throw new ApiError(400, "Department ID is required for this role");
+    }
+
+    const department = await Department.findOne({ _id: departmentId });
+    if (!department) throw new ApiError(404, "Department not found");
+    if (department.status !== "active")
+      throw new ApiError(400, "Department is not active");
+
+    if (requestedRole === "hod" && department.hod) {
+      throw new ApiError(409, "Department already has an HOD assigned");
+    }
+  }
+
+  // 4. Create the user
+  const user = await User.create({
+    firstName,
+    middleName,
+    lastName,
+    email,
+    password, // to be hashed in pre-save
+    role: requestedRole,
+    dob: new Date(dob),
+    gender,
+    phone,
+    designation,
+    status: "pending",
+    createdBy: req.user._id,
+  });
+
+  // 5. Create Role-Specific Records
+  try {
+    if (requestedRole === "faculty") {
+      const Faculty = mongoose.model("Faculty");
+      await Faculty.create({
+        user: user._id,
+        department: departmentId,
+        facultyId: facultyId,
+        department: "6822fafef22cbb97801908a9",
+        designation: designation,
+        role: requestedRole,
+        isProctorOrAdvisor: isProctorOrAdvisor,
+        isActive: isActive,
+        dateOfJoining: dateOfJoining,
+        dateOfRelieving: dateOfRelieving,
+        tenureStatus: tenureStatus,
+        qualification: qualification,
+        employeeId: employeeId,
+        specialization: specialization,
+        employmentType: employmentType,
+        // department: department,
+        // entType,
+        // department: department,
+      }).catch((err) => {
+        console.log(err);
+        console.log("Error creating faculty record:", err.message);
+      });
+    } else if (requestedRole === "hod") {
+      const Faculty = mongoose.model("Faculty");
+      const faculty = await Faculty.create({
+        user: user._id,
+        department: departmentId,
+        facultyId: facultyId,
+        department: "6822fafef22cbb97801908a9",
+        designation: designation,
+        role: requestedRole,
+        isProctorOrAdvisor: isProctorOrAdvisor,
+        isActive: isActive,
+        dateOfJoining: dateOfJoining,
+        dateOfRelieving: dateOfRelieving,
+        tenureStatus: tenureStatus,
+        qualification: qualification,
+        employeeId: employeeId,
+        specialization: specialization,
+        employmentType: employmentType,
+        department: department,
+      });
+      const department = await Department.findOne({ code: "CSBS" });
+      await department.assignHOD(faculty._id);
+    } else if (requestedRole === "student") {
+      const Student = mongoose.model("Student");
+      await Student.create({ user: user._id, department: departmentId });
+    } else if (requestedRole === "admin") {
+      const Admin = mongoose.model("Admin");
+
+      // Convert departmentScope codes to ObjectIds
+      if (!Array.isArray(departmentScope)) {
+        throw new ApiError(400, "departmentScope must be an array");
+      }
+
+      const departments = await Department.find({
+        code: { $in: departmentScope },
+      });
+
+      if (
+        !user.isSuperAdmin &&
+        (departments.length === 0 ||
+          departments.length !== departmentScope.length)
+      ) {
+        throw new ApiError(
+          400,
+          "Invalid or missing department codes in departmentScope",
+        );
+      }
+
+      const departmentIds = departments.map((d) => d._id);
+
+      await Admin.create({
+        user: user._id,
+        departmentScope: departmentIds,
+        designation: designation || "Admin",
+      });
+    }
+
+    // Add other role branches if needed
+  } catch (err) {
+    await User.findByIdAndDelete(user._id); // Rollback on failure
+    throw new ApiError(
+      500,
+      `Error creating ${requestedRole} record: ${err.message}`,
+    );
+  }
+
+  // 6. Email Verification Setup
+  const verificationToken = crypto.randomBytes(32).toString("hex");
   const hashedToken = crypto
     .createHash("sha256")
     .update(verificationToken)
     .digest("hex");
-  // Store verification token and expiry in user's metadata
+
   user.metadata = {
-    // ...user.metadata,
-
     emailVerificationToken: hashedToken,
-
     emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
   };
 
-  console.log("✅ Saved user token info:");
-
-  console.log("Token:", user.metadata.emailVerificationToken);
-
-  console.log("Expires:", user.metadata.emailVerificationExpires);
-
   await user.save();
 
-  console.log("✅ Saved user token info:");
-  console.log("Token:", user.metadata.emailVerificationToken);
-  console.log("Expires:", user.metadata.emailVerificationExpires);
-
-  // Send verification email
-  const verificationURL = `${req.protocol}://${req.get("host")}/api/v1/auth/verify-email/${verificationToken}`;
+  const verificationURL = `${req.protocol}://${req.get(
+    "host",
+  )}/api/v1/auth/verify-email/${verificationToken}`;
 
   try {
     await sendEmail({
       email: user.email,
-      subject: "Email Verification",
+      subject: "Your Account Has Been Created - Email Verification",
       template: "email-verification",
       data: {
         name: user.firstName,
+        creatorName: req.user.fullName,
+        creatorRole,
         verificationURL,
       },
     });
-
-    return res.status(201).json(
-      new ApiResponse(
-        201,
-        {
-          user: {
-            id: user._id,
-            uuid: user.uuid,
-            name: user.fullName,
-            email: user.email,
-            role: user.role,
-            status: user.status,
-          },
-        },
-        "User registered successfully. Please verify your email.",
-      ),
-    );
-  } catch (error) {
-    // Reset verification token fields
+  } catch (emailErr) {
     user.metadata.emailVerificationToken = undefined;
     user.metadata.emailVerificationExpires = undefined;
-
     await user.save();
-
-    return res.status(201).json(
-      new ApiResponse(
-        201,
-        {
-          user: {
-            id: user._id,
-            uuid: user.uuid,
-            name: user.fullName,
-            email: user.email,
-            role: user.role,
-            status: user.status,
-          },
-        },
-        "User registered successfully but email verification could not be sent.",
-      ),
-    );
   }
+
+  // 7. Final Response
+  return res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        user: {
+          id: user._id,
+          uuid: user.uuid,
+          name: user.fullName,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+        },
+      },
+      `${requestedRole} account created successfully. Email verification ${
+        user.metadata?.emailVerificationToken ? "sent." : "failed to send."
+      }`,
+    ),
+  );
 });
 
 // Rate limiter for login attempts - 5 attempts per 15 minutes from the same IP

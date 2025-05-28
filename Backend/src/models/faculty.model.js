@@ -113,17 +113,15 @@ const facultySchema = new mongoose.Schema(
       {
         organization: {
           type: String,
-          required: true,
           trim: true,
         },
         designation: {
           type: String,
-          required: true,
+
           trim: true,
         },
         startDate: {
           type: Date,
-          required: true,
         },
         endDate: {
           type: Date,
@@ -149,21 +147,19 @@ const facultySchema = new mongoose.Schema(
       {
         title: {
           type: String,
-          required: true,
+
           trim: true,
         },
         authors: {
           type: [String],
-          required: true,
         },
         publishedIn: {
           type: String,
-          required: true,
+
           trim: true,
         },
         publishedDate: {
           type: Date,
-          required: true,
         },
         doi: {
           type: String,
@@ -183,7 +179,6 @@ const facultySchema = new mongoose.Schema(
         type: {
           type: String,
           enum: ["journal", "conference", "book", "bookChapter", "other"],
-          required: true,
         },
       },
     ],
@@ -191,17 +186,16 @@ const facultySchema = new mongoose.Schema(
       {
         name: {
           type: String,
-          required: true,
+
           trim: true,
         },
         issuedBy: {
           type: String,
-          required: true,
+
           trim: true,
         },
         issuedDate: {
           type: Date,
-          required: true,
         },
         expiryDate: {
           type: Date,

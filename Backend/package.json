@@ -27,6 +27,7 @@
     "mongoose": "^8.14.1",
     "net": "^1.0.2",
     "nodemailer": "^6.10.1",
+    "readline-sync": "^1.4.10",
     "uuid": "^11.1.0",
     "winston": "^3.17.0",
     "xss-clean": "^0.1.4"

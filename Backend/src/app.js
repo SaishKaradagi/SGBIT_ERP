@@ -6,7 +6,7 @@ import authRoutes from "./routes/auth.routes.js";
 import { ApiError } from "./utils/ApiError.js";
 import { connectDB } from "./db/connection.js";
 import net from "net";
-
+import { initializeSystem } from "./utils/initSuperAdmin.js";
 // Create Express app
 const app = express();
 
@@ -60,5 +60,7 @@ socket.on("error", (err) => {
 
 // Global error handler
 app.use(errorHandler);
+
+//initializeSystem();
 
 export default app;

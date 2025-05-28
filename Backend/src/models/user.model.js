@@ -1,7 +1,7 @@
 // user.model.js
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
+// import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 
 const userSchema = new mongoose.Schema(
@@ -236,6 +236,13 @@ const userSchema = new mongoose.Schema(
     metadata: {
       type: Object,
       default: {}, // or Map
+    },
+
+    // Add this new field to track who created this user
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false, // Optional for backward compatibility with existing users
     },
   },
   {
