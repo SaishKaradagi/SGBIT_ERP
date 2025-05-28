@@ -55,19 +55,14 @@ const studentSchema = new mongoose.Schema(
       uppercase: true,
     },
     // Corrected: Student-specific personal information as direct properties, not references
-    dob: {
-      type: Date,
-      required: [true, "Date of birth is required"],
-    },
-    gender: {
+    religion: {
       type: String,
-      required: [true, "Gender is required"],
-      enum: ["Male", "Female", "Other", "Prefer not to say"],
+      trim: true,
     },
-    bloodGroup: {
+
+    caste: {
       type: String,
-      enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Unknown"],
-      default: "Unknown",
+      trim: true,
     },
     category: {
       type: String,
@@ -80,7 +75,7 @@ const studentSchema = new mongoose.Schema(
     },
     // Addresses will be stored in the Address collection with a reference to this student
     // No need to define address fields here
-    
+
     // Indian-specific fields
     aadharNumber: {
       type: String,
@@ -114,7 +109,7 @@ const studentSchema = new mongoose.Schema(
       currentSemester: {
         type: Number,
         min: [1, "Semester must be at least 1"],
-        max: [12, "Semester cannot exceed 12"],
+        max: [8, "Semester cannot exceed 12"],
       },
       cgpa: {
         type: Number,
@@ -162,9 +157,9 @@ studentSchema.virtual("age").get(function () {
 // Virtual to get all addresses for this student
 studentSchema.virtual("addresses", {
   ref: "Address",
-  localField: "user",  // The addresses are linked to the user ID
+  localField: "user", // The addresses are linked to the user ID
   foreignField: "user",
-  options: { match: { isActive: true } } // Only fetch active addresses
+  options: { match: { isActive: true } }, // Only fetch active addresses
 });
 
 // Static Method to Find Students by Batch
@@ -196,13 +191,13 @@ studentSchema.methods.getAddressByType = async function (addressType) {
   if (!Object.values(ADDRESS_TYPES).includes(addressType)) {
     throw new Error(`Invalid address type: ${addressType}`);
   }
-  
+
   const Address = mongoose.model("Address");
   return Address.findOne({
     user: this.user,
     addressType: addressType,
     isActive: true,
-    isDefaultForType: true
+    isDefaultForType: true,
   });
 };
 

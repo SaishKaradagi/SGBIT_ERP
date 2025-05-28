@@ -141,9 +141,9 @@ export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
           "Invalid or misconfigured department: missing department code.",
         );
       }
-      targetDeptUpper = dept.departmentCode.toUpperCase();
+      targetDeptUpper = dept.departmentCode.toLowerCase(); // Convert to uppercase for consistency
     } else if (typeof targetDepartmentId === "string") {
-      targetDeptUpper = targetDepartmentId.toUpperCase(); // If departmentCode is passed directly
+      targetDeptUpper = targetDepartmentId.toLowerCase(); // If departmentCode is passed directly
     }
 
     // Query admin privileges by user ID first
@@ -174,14 +174,16 @@ export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
 
     // Perform the actual privilege check
     const hasPrivilege = allPrivileges.some((p) => {
-      const scopeUpper = p.scope.toUpperCase();
+      const scopeId = p.scope?.toString?.(); // Convert ObjectId to string
+      const targetScopeId = targetDepartmentId?.toString?.(); // Convert target dept to string
+
       const privileges = Array.isArray(p.privilege)
         ? p.privilege
         : [p.privilege];
+
       return (
         privileges.includes(privilege) &&
-        (scopeUpper === "GLOBAL" ||
-          (targetDeptUpper && scopeUpper === targetDeptUpper))
+        (scopeId === "GLOBAL" || (targetScopeId && scopeId === targetScopeId))
       );
     });
 
@@ -266,12 +268,12 @@ export const hasFacultyPermission = (departmentCheck = false) => {
 
         // Check if the faculty member is a Class Teacher or Proctor
         // This check assumes you have a field indicating this role in the Faculty model
-        if (!faculty.isClassTeacher && !faculty.isProctor) {
-          throw new ApiError(
-            403,
-            "Only Class Teachers or Proctors can create student accounts",
-          );
-        }
+        // if (!faculty.isClassTeacher && !faculty.isProctor) {
+        //   throw new ApiError(
+        //     403,
+        //     "Only Class Teachers or Proctors can create student accounts",
+        //   );
+        // }
       }
     }
 

@@ -12,7 +12,6 @@ export const ADDRESS_TYPES = Object.freeze({
   CORRESPONDENCE: "correspondence",
 });
 
-
 /**
  * @description Validation helper for alphanumeric text with spaces and basic punctuation
  */
@@ -365,10 +364,7 @@ addressSchema.statics.getUserAddresses = async function (userId) {
 /**
  * Static method for soft deletion
  */
-addressSchema.statics.softDelete = async function (
-  addressId,
-  userId,
-) {
+addressSchema.statics.softDelete = async function (addressId, userId) {
   const address = await this.findOne({ _id: addressId, user: userId });
 
   if (!address) {
@@ -411,4 +407,4 @@ addressSchema.statics.softDelete = async function (
 const Address = mongoose.model("Address", addressSchema);
 
 // Export model and constants
-export { Address, addressSchema, ADDRESS_TYPES};
+export { Address, addressSchema };

@@ -122,7 +122,7 @@ import Admin from "./admin.model.js";
 const adminPrivilegeSchema = new mongoose.Schema(
   {
     admin: {
-      type: mongoose.Schema.Types.Mixed, // Allow either ObjectId OR string
+      type: mongoose.Schema.Types.ObjectId,
       ref: "Admin",
       required: [true, "Admin reference is required"],
       index: true,
@@ -161,7 +161,7 @@ const adminPrivilegeSchema = new mongoose.Schema(
       },
     },
     scope: {
-      type: String,
+      type: mongoose.Schema.Types.ObjectId,
       required: true,
       default: "GLOBAL", // Can be "GLOBAL", or department ID strings
     },

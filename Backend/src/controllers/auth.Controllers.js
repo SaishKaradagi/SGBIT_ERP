@@ -14,6 +14,7 @@ import { rateLimit } from "../utils/rateLimit.js";
 import dotenv from "dotenv";
 // import Department from "../models/department.model.js";
 import Faculty from "../models/faculty.model.js";
+import Student from "../models/student.model.js";
 
 dotenv.config();
 
@@ -51,6 +52,7 @@ export const createSuperAdmin = asyncHandler(async (req, res) => {
     gender,
     phone,
     designation,
+    departmentScope,
   } = req.body;
 
   // Check if request is from another Super Admin (if not initialization)
@@ -65,28 +67,46 @@ export const createSuperAdmin = asyncHandler(async (req, res) => {
   }
 
   // Create user with SuperAdmin role and active status
-  const user = await User.create({
-    firstName,
-    middleName,
-    lastName,
-    email,
-    password, // Will be hashed in the pre-save hook
-    role: "superAdmin",
-    dob: new Date(dob),
-    gender,
-    phone,
-    status: "active", // Super Admins are immediately active
-    isEmailVerified: true, // Auto-verify Super Admin email
-    createdBy: req.user ? req.user._id : null, // Track creator if not initialization
-  });
+  try {
+    const User = mongoose.model("User");
+    const user = await User.create({
+      firstName,
+      middleName,
+      lastName,
+      email,
+      password, // Will be hashed in the pre-save hook
+      role: "superAdmin",
+      dob: new Date(dob),
+      gender,
+      phone,
+      departmentScope: [], // Super Admins have no department scope
+      designation: designation,
+      status: "active", // Super Admins are immediately active
+      isEmailVerified: true, // Auto-verify Super Admin email
+      createdBy: req.user ? req.user._id : null, // Track creator if not initialization
+    });
+  } catch (error) {
+    throw new ApiError(500, `Error creating user: ${error.message}`);
+  }
 
   // Create admin record for the Super Admin
   try {
     const Admin = mongoose.model("Admin");
     const admin = await Admin.create({
-      user: user._id,
-      isSuperAdmin: true,
-      // Add other required admin fields
+      firstName,
+      middleName,
+      lastName,
+      email,
+      password, // Will be hashed in the pre-save hook
+      role: "superAdmin",
+      dob: new Date(dob),
+      gender,
+      phone,
+      departmentScope: [], // Super Admins have no department scope
+      designation: designation,
+      status: "active", // Super Admins are immediately active
+      isEmailVerified: true, // Auto-verify Super Admin email
+      createdBy: req.user ? req.user._id : null,
     });
 
     // Generate tokens if response is needed
@@ -313,6 +333,11 @@ export const createUser = asyncHandler(async (req, res) => {
     employeeId,
     specialization,
     employmentType,
+    usn,
+    admissionYear,
+    batch,
+    section,
+    proctor,
   } = req.body;
 
   const User = mongoose.model("User");
@@ -427,7 +452,37 @@ export const createUser = asyncHandler(async (req, res) => {
       await department.assignHOD(faculty._id);
     } else if (requestedRole === "student") {
       const Student = mongoose.model("Student");
-      await Student.create({ user: user._id, department: departmentId });
+
+      // Validate required student fields
+      if (!usn) {
+        throw new ApiError(400, "USN is required for student");
+      }
+      if (!admissionYear) {
+        throw new ApiError(400, "Admission year is required for student");
+      }
+      if (!section) {
+        throw new ApiError(400, "Section is required for student");
+      }
+      if (!batch) {
+        throw new ApiError(400, "Batch is required for student");
+      }
+
+      await Student.create({
+        firstName,
+        middleName,
+        lastName,
+        email,
+        phone,
+        dob: new Date(dob),
+        gender,
+        usn,
+        admissionYear: parseInt(admissionYear),
+        section,
+        department: departmentId,
+        batch,
+        proctor,
+        user: user._id,
+      });
     } else if (requestedRole === "admin") {
       const Admin = mongoose.model("Admin");
 

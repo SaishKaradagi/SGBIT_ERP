@@ -79,7 +79,11 @@ router.get("/getCurrentUser", verifiedEmailOnly, getCurrentUser);
 // User creation routes with role-based restrictions
 
 // Super Admin can create other Super Admins
-router.post("/register/superadmin", restrictTo("superAdmin"), createSuperAdmin);
+router.post(
+  "/register/superadmin/superadmin",
+  restrictTo("superAdmin"),
+  createSuperAdmin,
+);
 
 // Super Admin can create any type of user
 router.post("/register/superadmin/admin", restrictTo("superAdmin"), createUser);

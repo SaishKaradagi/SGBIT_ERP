@@ -163,7 +163,7 @@ const userSchema = new mongoose.Schema(
           "admin",
           "superAdmin",
           "hod",
-          "proctor",
+          // "proctor",
           "faculty",
           "student",
           "studentGuardian",
