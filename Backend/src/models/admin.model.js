@@ -101,7 +101,7 @@ const adminSchema = new mongoose.Schema(
 
     designation: {
       type: String,
-      required: String,
+      required: [true, "Designation is required"],
       trim: true,
       minlength: [2, "Designation must be at least 2 characters"],
       maxlength: [100, "Designation must be at most 100 characters"],

@@ -41,6 +41,7 @@ const generateTokens = (userId) => {
 };
 
 // Fix for createSuperAdmin function in auth.Controllers.js
+
 export const createSuperAdmin = asyncHandler(async (req, res) => {
   const {
     firstName,
@@ -60,16 +61,20 @@ export const createSuperAdmin = asyncHandler(async (req, res) => {
     throw new ApiError(403, "Only Super Admins can create other Super Admins");
   }
 
+  const User = mongoose.model("User");
+  const Admin = mongoose.model("Admin");
+
   // Check if user with the same email already exists
   const existingUser = await User.findOne({ email });
   if (existingUser) {
     throw new ApiError(409, "User with this email already exists");
   }
 
-  // Create user with SuperAdmin role and active status
+  let user; // Declare user variable in outer scope
+
   try {
-    const User = mongoose.model("User");
-    const user = await User.create({
+    // Create user with SuperAdmin role and active status
+    user = await User.create({
       firstName,
       middleName,
       lastName,
@@ -79,67 +84,83 @@ export const createSuperAdmin = asyncHandler(async (req, res) => {
       dob: new Date(dob),
       gender,
       phone,
-      departmentScope: [], // Super Admins have no department scope
       designation: designation,
       status: "active", // Super Admins are immediately active
       isEmailVerified: true, // Auto-verify Super Admin email
       createdBy: req.user ? req.user._id : null, // Track creator if not initialization
     });
-  } catch (error) {
-    throw new ApiError(500, `Error creating user: ${error.message}`);
-  }
 
-  // Create admin record for the Super Admin
-  try {
-    const Admin = mongoose.model("Admin");
-    const admin = await Admin.create({
-      firstName,
-      middleName,
-      lastName,
-      email,
-      password, // Will be hashed in the pre-save hook
-      role: "superAdmin",
-      dob: new Date(dob),
-      gender,
-      phone,
-      departmentScope: [], // Super Admins have no department scope
-      designation: designation,
-      status: "active", // Super Admins are immediately active
-      isEmailVerified: true, // Auto-verify Super Admin email
-      createdBy: req.user ? req.user._id : null,
-    });
-
-    // Generate tokens if response is needed
-    const { token, refreshToken } = generateTokens(user._id);
-
-    if (res) {
-      return res.status(201).json(
-        new ApiResponse(
-          201,
-          {
-            user: {
-              id: user._id,
-              uuid: user.uuid,
-              name: user.fullName,
-              email: user.email,
-              role: user.role,
-              status: user.status,
-            },
-            token,
-            refreshToken,
-          },
-          "Super Admin created successfully",
-        ),
-      );
+    // Handle department scope conversion for Super Admin
+    let departmentIds = [];
+    
+    if (departmentScope && Array.isArray(departmentScope) && departmentScope.length > 0) {
+      // Convert department codes to ObjectIds
+      const Department = mongoose.model("Department");
+      const departments = await Department.find({
+        code: { $in: departmentScope }
+      });
+      
+      if (departments.length !== departmentScope.length) {
+        throw new ApiError(400, "Some department codes are invalid");
+      }
+      
+      departmentIds = departments.map(dept => dept._id);
+    } else {
+      // For Super Admins, if no departmentScope provided, give them access to all departments
+      const Department = mongoose.model("Department");
+      const allDepartments = await Department.find({ status: 'active' });
+      departmentIds = allDepartments.map(dept => dept._id);
     }
 
-    return { user, admin };
+    // Create admin record for the Super Admin
+    const admin = await Admin.create({
+      user: user._id, // Reference to the created user
+      departmentScope: departmentIds, // All departments for Super Admins or specified ones
+      designation: designation || "Super Admin",
+    });
+
+    // Generate tokens
+    const { token, refreshToken } = generateTokens(user._id);
+
+    // Return success response
+    return res.status(201).json(
+      new ApiResponse(
+        201,
+        {
+          user: {
+            id: user._id,
+            uuid: user.uuid,
+            name: user.fullName,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+          },
+          admin: {
+            id: admin._id,
+            departmentScope: admin.departmentScope,
+            designation: admin.designation,
+          },
+          token,
+          refreshToken,
+        },
+        "Super Admin created successfully",
+      ),
+    );
+
   } catch (error) {
-    // If admin record creation fails, delete the user
-    await User.findByIdAndDelete(user._id);
+    // If any step fails, clean up the user if it was created
+    if (user && user._id) {
+      try {
+        await User.findByIdAndDelete(user._id);
+        console.log("Cleaned up user record due to error");
+      } catch (cleanupError) {
+        console.error("Error during cleanup:", cleanupError.message);
+      }
+    }
+    
     throw new ApiError(
       500,
-      `Error creating Super Admin record: ${error.message}`,
+      `Error creating Super Admin: ${error.message}`,
     );
   }
 });
@@ -183,132 +204,7 @@ export const initializeSuperAdmin = async (superAdminDetails) => {
   }
 };
 
-// // Register a new user
-// export const registerUser = asyncHandler(async (req, res) => {
-//   const {
-//     firstName,
-//     middleName,
-//     lastName,
-//     email,
-//     password,
-//     role,
-//     dob,
-//     gender,
-//     phone,
-//   } = req.body;
 
-//   // Check if user with the same email already exists
-//   const existingUser = await User.findOne({ email });
-//   if (existingUser) {
-//     throw new ApiError(409, "User with this email already exists");
-//   }
-
-//   // Check if role is valid for self-registration
-//   const allowedRoles = ["student", "faculty", "staff", "guest"];
-//   if (!allowedRoles.includes(role)) {
-//     throw new ApiError(403, "Cannot self-register with the requested role");
-//   }
-
-//   // Create user with initial status as pending
-//   const user = await User.create({
-//     firstName,
-//     middleName,
-//     lastName,
-//     email,
-//     password, // Will be hashed in the pre-save hook
-//     role,
-//     dob: new Date(dob),
-//     gender,
-//     phone,
-//     status: "pending",
-//   });
-
-//   // Generate verification token
-//   const verificationToken = crypto.randomBytes(32).toString("hex");
-
-//   // Hash the token
-//   const hashedToken = crypto
-//     .createHash("sha256")
-//     .update(verificationToken)
-//     .digest("hex");
-//   // Store verification token and expiry in user's metadata
-//   user.metadata = {
-//     // ...user.metadata,
-
-//     emailVerificationToken: hashedToken,
-
-//     emailVerificationExpires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-//   };
-
-//   console.log("✅ Saved user token info:");
-
-//   console.log("Token:", user.metadata.emailVerificationToken);
-
-//   console.log("Expires:", user.metadata.emailVerificationExpires);
-
-//   await user.save();
-
-//   console.log("✅ Saved user token info:");
-//   console.log("Token:", user.metadata.emailVerificationToken);
-//   console.log("Expires:", user.metadata.emailVerificationExpires);
-
-//   // Send verification email
-//   const verificationURL = `${req.protocol}://${req.get("host")}/api/v1/auth/verify-email/${verificationToken}`;
-
-//   try {
-//     await sendEmail({
-//       email: user.email,
-//       subject: "Email Verification",
-//       template: "email-verification",
-//       data: {
-//         name: user.firstName,
-//         verificationURL,
-//       },
-//     });
-
-//     return res.status(201).json(
-//       new ApiResponse(
-//         201,
-//         {
-//           user: {
-//             id: user._id,
-//             uuid: user.uuid,
-//             name: user.fullName,
-//             email: user.email,
-//             role: user.role,
-//             status: user.status,
-//           },
-//         },
-//         "User registered successfully. Please verify your email.",
-//       ),
-//     );
-//   } catch (error) {
-//     // Reset verification token fields
-//     user.metadata.emailVerificationToken = undefined;
-//     user.metadata.emailVerificationExpires = undefined;
-
-//     await user.save();
-
-//     return res.status(201).json(
-//       new ApiResponse(
-//         201,
-//         {
-//           user: {
-//             id: user._id,
-//             uuid: user.uuid,
-//             name: user.fullName,
-//             email: user.email,
-//             role: user.role,
-//             status: user.status,
-//           },
-//         },
-//         "User registered successfully but email verification could not be sent.",
-//       ),
-//     );
-//   }
-// });
-
-// Enhanced createUser function with department validation
 export const createUser = asyncHandler(async (req, res) => {
   const {
     firstName,
@@ -351,7 +247,6 @@ export const createUser = asyncHandler(async (req, res) => {
 
   // 2. Role-based Authorization
   const creatorRole = req.user.role.toLowerCase();
-  // const requestedRole = req.body.role.toLowerCase();
   const rolePermissions = {
     superadmin: ["admin", "hod", "faculty", "student", "staff"],
     admin: ["hod", "faculty", "student", "staff"],
@@ -370,12 +265,13 @@ export const createUser = asyncHandler(async (req, res) => {
   }
 
   // 3. Validate departmentId if role is department-based
+  let department = null; // Initialize department variable
   if (["hod", "faculty", "student"].includes(requestedRole)) {
     if (!departmentId) {
       throw new ApiError(400, "Department ID is required for this role");
     }
 
-    const department = await Department.findOne({ _id: departmentId });
+    department = await Department.findOne({ _id: departmentId });
     if (!department) throw new ApiError(404, "Department not found");
     if (department.status !== "active")
       throw new ApiError(400, "Department is not active");
@@ -407,9 +303,8 @@ export const createUser = asyncHandler(async (req, res) => {
       const Faculty = mongoose.model("Faculty");
       await Faculty.create({
         user: user._id,
-        department: departmentId,
+        departmentId: departmentId,
         facultyId: facultyId,
-        department: "6822fafef22cbb97801908a9",
         designation: designation,
         role: requestedRole,
         isProctorOrAdvisor: isProctorOrAdvisor,
@@ -421,9 +316,6 @@ export const createUser = asyncHandler(async (req, res) => {
         employeeId: employeeId,
         specialization: specialization,
         employmentType: employmentType,
-        // department: department,
-        // entType,
-        // department: department,
       }).catch((err) => {
         console.log(err);
         console.log("Error creating faculty record:", err.message);
@@ -432,9 +324,8 @@ export const createUser = asyncHandler(async (req, res) => {
       const Faculty = mongoose.model("Faculty");
       const faculty = await Faculty.create({
         user: user._id,
-        department: departmentId,
+        departmentId: departmentId,
         facultyId: facultyId,
-        department: "6822fafef22cbb97801908a9",
         designation: designation,
         role: requestedRole,
         isProctorOrAdvisor: isProctorOrAdvisor,
@@ -446,9 +337,10 @@ export const createUser = asyncHandler(async (req, res) => {
         employeeId: employeeId,
         specialization: specialization,
         employmentType: employmentType,
-        department: department,
+        department: department, // Now properly initialized
       });
-      const department = await Department.findOne({ code: "CSBS" });
+      
+      // Use the department variable that was already fetched and validated
       await department.assignHOD(faculty._id);
     } else if (requestedRole === "student") {
       const Student = mongoose.model("Student");
