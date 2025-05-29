@@ -78,6 +78,7 @@ export const restrictTo = (...roles) => {
   const allowedRoles = roles.map((role) => role.toLowerCase());
 
   return asyncHandler(async (req, res, next) => {
+    console.log("🔍 Incoming user: ", req.user);
     const userRole = req.user?.role?.toLowerCase();
 
     console.log("🔍 User role:", userRole);
