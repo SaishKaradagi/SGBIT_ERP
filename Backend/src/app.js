@@ -6,7 +6,9 @@ import authRoutes from "./routes/auth.routes.js";
 import { ApiError } from "./utils/ApiError.js";
 import { connectDB } from "./db/connection.js";
 import net from "net";
-import { initializeSystem } from "./utils/initSuperAdmin.js";
+import User from "./models/user.model.js";
+import UserCreation from "./routes/UserCreation.routes.js";
+// import { initializeSystem } from "./utils/initSuperAdmin.js";
 // Create Express app
 const app = express();
 
@@ -18,6 +20,8 @@ configureSecurityMiddleware(app);
 
 // API routes
 app.use("/api/v1/auth", authRoutes);
+// User creation routes
+app.use("/api/v1/UserCreation", UserCreation);
 
 // Add other routes here as your application grows
 // app.use("/api/v1/users", userRoutes);
