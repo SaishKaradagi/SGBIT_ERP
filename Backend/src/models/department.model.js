@@ -143,13 +143,7 @@ const departmentSchema = new mongoose.Schema(
         },
       },
     ],
-    // Departmental Offerings
-    programmes: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Programme",
-      },
-    ],
+    
     courses: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -309,13 +303,6 @@ departmentSchema.statics.findActiveDepartments = function () {
   return this.find({ status: "active" }).sort({ name: 1 });
 };
 
-// Static method to find departments by programme
-departmentSchema.statics.findByProgramme = function (programmeId) {
-  return this.find({
-    programmes: programmeId,
-    status: "active",
-  });
-};
 
 // Static method to get departments with HOD
 departmentSchema.statics.findDepartmentsWithHOD = function () {

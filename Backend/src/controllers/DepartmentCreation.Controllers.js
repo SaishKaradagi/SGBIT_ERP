@@ -3,6 +3,8 @@ import User from "../models/user.model.js";
 import Department from "../models/department.model.js";
 import { Address } from "../models/address.model.js";
 import Faculty from "../models/Faculty.Model.js";
+import Course from "../models/course.model.js";
+import Programme from "../models/Faculty.Model.js";
 
 import { asyncHandler } from "../middlewares/asyncHandler.middleware.js";
 import { ApiError } from "../utils/ApiError.js";
@@ -210,7 +212,6 @@ export const getDepartmentById = asyncHandler(async (req, res) => {
     { path: "faculty", select: "firstName lastName email" },
     { path: "contactUser", select: "firstName lastName email phone" },
     { path: "address" },
-    { path: "programmes", select: "name code" },
     { path: "courses", select: "name code" },
     { path: "mergedTo", select: "name code" },
   ]);
