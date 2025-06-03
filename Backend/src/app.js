@@ -8,6 +8,7 @@ import { connectDB } from "./db/connection.js";
 import net from "net";
 import User from "./models/user.model.js";
 import UserCreation from "./routes/UserCreation.routes.js";
+import SuperAdmin from "./routes/SuperAdmin.routes.js";
 // import { initializeSystem } from "./utils/initSuperAdmin.js";
 // Create Express app
 const app = express();
@@ -22,6 +23,8 @@ configureSecurityMiddleware(app);
 app.use("/api/v1/auth", authRoutes);
 // User creation routes
 app.use("/api/v1/UserCreation", UserCreation);
+//Department Creation
+app.use("/api/v1/SuperAdmin/", SuperAdmin);
 
 // Add other routes here as your application grows
 // app.use("/api/v1/users", userRoutes);

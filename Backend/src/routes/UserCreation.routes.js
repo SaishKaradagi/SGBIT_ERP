@@ -3,14 +3,6 @@ import express from "express";
 import {
   createUser,
   createSuperAdmin,
-  // Add these new imports
-  addDepartment,
-  getAllDepartments,
-  getDepartmentById,
-  updateDepartment,
-  updateDepartmentStatus,
-  deleteDepartment,
-  getDepartmentStats
 } from "../controllers/UserCreation.Controllers.js";
 
 import {
@@ -22,22 +14,6 @@ import {
 } from "../middlewares/auth.Middleware.js";
 
 const router = express.Router();
-
-// User creation routes with role-based restrictions
-router.use(verifyJWT);
-
-// Department CRUD operations
-router.post("/department", restrictTo("superAdmin"), addDepartment);
-router.get("/departments", restrictTo("superAdmin", "admin"), getAllDepartments);
-router.get("/department/:id", restrictTo("superAdmin", "admin", "hod"), getDepartmentById);
-router.put("/department/:id", restrictTo("superAdmin"), updateDepartment);
-router.delete("/department/:id", restrictTo("superAdmin"), deleteDepartment);
-
-// Department status management
-router.patch("/department/:id/status", restrictTo("superAdmin"), updateDepartmentStatus);
-
-// Department statistics and analytics
-router.get("/departments/stats", restrictTo("superAdmin", "admin"), getDepartmentStats);
 
 // ============ USER CREATION ROUTES ============
 // Super Admin can create other Super Admins
@@ -59,11 +35,7 @@ router.post(
   createUser,
 );
 
-router.post(
-  "/register/admin/faculty",
-  restrictTo("admin"),
-  createUser,
-);
+router.post("/register/admin/faculty", restrictTo("admin"), createUser);
 
 router.post(
   "/register/admin/student",
