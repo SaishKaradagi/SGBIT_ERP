@@ -143,7 +143,7 @@ const departmentSchema = new mongoose.Schema(
         },
       },
     ],
-    
+
     courses: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -302,7 +302,6 @@ departmentSchema.virtual("students", {
 departmentSchema.statics.findActiveDepartments = function () {
   return this.find({ status: "active" }).sort({ name: 1 });
 };
-
 
 // Static method to get departments with HOD
 departmentSchema.statics.findDepartmentsWithHOD = function () {
