@@ -631,5 +631,5 @@ facultySchema.pre(/^find/, function (next) {
 });
 
 // Define the model and export
-const Faculty = mongoose.model("Faculty", facultySchema);
+const Faculty = mongoose.models.Faculty || mongoose.model('Faculty', facultySchema);
 export default Faculty;

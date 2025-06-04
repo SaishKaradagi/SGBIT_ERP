@@ -27,12 +27,12 @@ const noticeSchema = new mongoose.Schema({
     trim: true
   },
   author: {
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
   department: {
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Department',
     default: null, // null means all departments
     index: true // For faster department-specific queries
@@ -119,15 +119,15 @@ const noticeSchema = new mongoose.Schema({
     default: ['ALL']
   }],
   semester: [{
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Semester'  // Target specific semesters
   }],
   batch: [{
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Batch'     // Target specific batches
   }],
   programme: [{
-    type: Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.ObjectId,
     ref: 'Programme'  // Target specific programmes
   }],
 }, {

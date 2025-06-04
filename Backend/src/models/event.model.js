@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');
+import mongoose from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
 
 const eventSchema = new mongoose.Schema({
   uuid: {
@@ -88,6 +88,48 @@ eventSchema.statics.findByDateRange = function(startDate, endDate) {
   }).sort({ eventDate: 1 });
 };
 
+// Static method to find events by status
+eventSchema.statics.findByStatus = function(status) {
+  const now = new Date();
+  let query = {};
+  
+  switch (status) {
+    case 'upcoming':
+      query = { eventDate: { $gt: now } };
+      break;
+    case 'ongoing':
+      const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+      query = { 
+        eventDate: { 
+          $gte: twentyFourHoursAgo,
+          $lte: now 
+        }
+      };
+      break;
+    case 'past':
+      const pastCutoff = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+      query = { eventDate: { $lt: pastCutoff } };
+      break;
+  }
+  
+  return this.find(query).sort({ eventDate: status === 'past' ? -1 : 1 });
+};
+
+// Instance method to check if event is active
+eventSchema.methods.isActive = function() {
+  return this.status === 'upcoming' || this.status === 'ongoing';
+};
+
+// Pre-save middleware to validate event date
+eventSchema.pre('save', function(next) {
+  if (this.isNew && this.eventDate < new Date()) {
+    return next(new Error('Event date cannot be in the past'));
+  }
+  next();
+});
+
+// Create the model
 const Event = mongoose.model('Event', eventSchema);
 
-module.exports = Event;
+// Export as default
+export default Event;
