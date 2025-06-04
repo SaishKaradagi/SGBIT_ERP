@@ -7,7 +7,7 @@ import {
   updateDepartment,
   updateDepartmentStatus,
   deleteDepartment,
-  getDepartmentStats,
+  getDepartmentStatistics,
 } from "../controllers/DepartmentCreation.Controllers.js";
 
 import { verifyJWT, restrictTo } from "../middlewares/auth.Middleware.js";
@@ -42,7 +42,7 @@ router.patch(
 router.get(
   "/departments/stats",
   restrictTo("superAdmin", "admin"),
-  getDepartmentStats,
+  getDepartmentStatistics,
 );
 
 export default router;
