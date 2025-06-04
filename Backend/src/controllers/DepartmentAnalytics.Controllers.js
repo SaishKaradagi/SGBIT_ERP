@@ -22,6 +22,9 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+
+// ============ USER MANAGEMENT STATISTICS ============
+
 export const getDashboardOverview = asyncHandler(async (req, res) => {
   try {
     // Use Promise.allSettled for better error handling and performance
@@ -34,13 +37,13 @@ export const getDashboardOverview = asyncHandler(async (req, res) => {
       recentActivities,
       criticalAlerts,
     ] = await Promise.allSettled([
-      getUserStatistics(),
-      getDepartmentStatistics(),
-      getAcademicStatistics(),
-      getFinancialStatistics(),
-      getSystemHealthMetrics(),
-      getRecentActivities(),
-      getCriticalAlerts(),
+      getUserStatistics(req, res, true),        // Add true flag
+      getDepartmentStatistics(req, res, true),  // Add true flag
+      getAcademicStatistics(req, res, true),   // Add true flag
+      getFinancialStatistics(req, res, true),  // Add true flag
+      getSystemHealthMetrics(req, res, true),  // Add true flag
+      getRecentActivities(req, res, true),     // Add true flag
+      getCriticalAlerts(req, res, true),       // Add true flag
     ]);
 
     // Handle any failed promises gracefully
@@ -100,146 +103,181 @@ export const getDashboardOverview = asyncHandler(async (req, res) => {
     logger.error("Dashboard overview error:", error);
     throw new ApiError(500, "Failed to retrieve dashboard overview");
   }
-});//done
+});
 
-// ============ USER MANAGEMENT STATISTICS ============
+export const getUserStatistics = async (req, res) => {
+  try {
+    const [
+      totalUsers,
+      usersByRole,
+      activeUsers,
+      recentRegistrations,
+      inactiveUsers,
+    ] = await Promise.all([
+      User.countDocuments({ isDeleted: { $ne: true } }),
 
-export const getUserStatistics = async () => {
-  const [
-    totalUsers,
-    usersByRole,
-    activeUsers,
-    recentRegistrations,
-    inactiveUsers,
-  ] = await Promise.all([
-    User.countDocuments({ isDeleted: { $ne: true } }),
+      User.aggregate([
+        { $match: { isDeleted: { $ne: true } } },
+        { $group: { _id: "$role", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
 
-    User.aggregate([
-      { $match: { isDeleted: { $ne: true } } },
-      { $group: { _id: "$role", count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-    ]),
-
-    User.countDocuments({
-      isActive: true,
-      isDeleted: { $ne: true },
-      lastLogin: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }, // Last 30 days
-    }),
-
-    User.countDocuments({
-      isDeleted: { $ne: true },
-      createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // Last 7 days
-    }),
-
-    User.countDocuments({
-      isActive: false,
-      isDeleted: { $ne: true },
-    }),
-  ]);
-
-  // Get growth trends
-  const growthTrend = await User.aggregate([
-    {
-      $match: {
+      User.countDocuments({
+        isActive: true,
         isDeleted: { $ne: true },
-        createdAt: {
-          $gte: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000),
-        }, // Last 6 months
-      },
-    },
-    {
-      $group: {
-        _id: {
-          year: { $year: "$createdAt" },
-          month: { $month: "$createdAt" },
-          role: "$role",
-        },
-        count: { $sum: 1 },
-      },
-    },
-    { $sort: { "_id.year": -1, "_id.month": -1 } },
-  ]);
+        lastLogin: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      }),
 
-  return {
-    total: totalUsers,
-    byRole: usersByRole.reduce((acc, item) => {
-      acc[item._id] = item.count;
-      return acc;
-    }, {}),
-    active: activeUsers,
-    recentRegistrations,
-    inactive: inactiveUsers,
-    growthTrend,
-  };
-};//done
+      User.countDocuments({
+        isDeleted: { $ne: true },
+        createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      }),
 
-// ============ DEPARTMENT STATISTICS ============
+      User.countDocuments({
+        isActive: false,
+        isDeleted: { $ne: true },
+      }),
+    ]);
 
-export const getDepartmentStatistics = async () => {
-  const [
-    totalDepartments,
-    departmentsByStatus,
-    departmentsWithoutHOD,
-    budgetUtilization,
-    facultyDistribution,
-  ] = await Promise.all([
-    Department.countDocuments(),
-
-    Department.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
-
-    Department.countDocuments({ hod: null, status: "active" }),
-
-    Department.aggregate([
+    const growthTrend = await User.aggregate([
       {
-        $match: { status: "active", "budget.allocated": { $gt: 0 } },
-      },
-      {
-        $project: {
-          name: 1,
-          allocated: "$budget.allocated",
-          utilized: "$budget.utilized",
-          utilizationPercentage: {
-            $multiply: [
-              { $divide: ["$budget.utilized", "$budget.allocated"] },
-              100,
-            ],
+        $match: {
+          isDeleted: { $ne: true },
+          createdAt: {
+            $gte: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000),
           },
         },
       },
-      { $sort: { utilizationPercentage: -1 } },
-    ]),
-
-    Department.aggregate([
       {
-        $lookup: {
-          from: "faculties",
-          localField: "_id",
-          foreignField: "department",
-          as: "facultyMembers",
+        $group: {
+          _id: {
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
+            role: "$role",
+          },
+          count: { $sum: 1 },
         },
       },
-      {
-        $project: {
-          name: 1,
-          code: 1,
-          facultyCount: { $size: "$facultyMembers" },
-        },
-      },
-      { $sort: { facultyCount: -1 } },
-    ]),
-  ]);
+      { $sort: { "_id.year": -1, "_id.month": -1 } },
+    ]);
 
-  return {
-    total: totalDepartments,
-    byStatus: departmentsByStatus.reduce((acc, item) => {
-      acc[item._id] = item.count;
-      return acc;
-    }, {}),
-    withoutHOD: departmentsWithoutHOD,
-    budgetUtilization,
-    facultyDistribution,
-  };
-};//done
+    const response = {
+      total: totalUsers,
+      byRole: usersByRole.reduce((acc, item) => {
+        acc[item._id] = item.count;
+        return acc;
+      }, {}),
+      active: activeUsers,
+      recentRegistrations,
+      inactive: inactiveUsers,
+      growthTrend,
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, response, "User statistics retrieved successfully"));
+  } catch (error) {
+    console.error("Error fetching user statistics:", error);
+    return res
+      .status(500)
+      .json(new ApiResponse(500, null, "Failed to retrieve user statistics"));
+  }
+};
+
+// ============ DEPARTMENT STATISTICS ============
+
+
+export const getDepartmentStatistics = async (req, res, returnDataOnly) => {
+  try {
+    const [
+      totalDepartments,
+      departmentsByStatus,
+      departmentsWithoutHOD,
+      budgetUtilization,
+      facultyDistribution,
+    ] = await Promise.all([
+      Department.countDocuments(),
+
+      Department.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+
+      Department.countDocuments({ hod: null, status: "active" }),
+
+      Department.aggregate([
+        {
+          $match: { status: "active", "budget.allocated": { $gt: 0 } },
+        },
+        {
+          $project: {
+            name: 1,
+            allocated: "$budget.allocated",
+            utilized: "$budget.utilized",
+            utilizationPercentage: {
+              $multiply: [
+                { $divide: ["$budget.utilized", "$budget.allocated"] },
+                100,
+              ],
+            },
+          },
+        },
+        { $sort: { utilizationPercentage: -1 } },
+      ]),
+
+      Department.aggregate([
+        {
+          $lookup: {
+            from: "faculties",
+            localField: "_id",
+            foreignField: "department",
+            as: "facultyMembers",
+          },
+        },
+        {
+          $project: {
+            name: 1,
+            code: 1,
+            facultyCount: { $size: "$facultyMembers" },
+          },
+        },
+        { $sort: { facultyCount: -1 } },
+      ]),
+    ]);
+
+    let responseData = {
+      total: totalDepartments,
+      byStatus: departmentsByStatus.reduce((acc, item) => {
+        acc[item._id] = item.count;
+        return acc;
+      }, {}),
+      withoutHOD: departmentsWithoutHOD,
+      budgetUtilization,
+      facultyDistribution,
+    };
+
+    // If called from dashboard, return data directly
+    if(returnDataOnly==true){
+      return responseData;
+    }else{
+        returnDataOnly=false;
+    }
+    
+    
+
+    // Otherwise, send HTTP response as usual
+    const response = new ApiResponse(200, responseData);
+    return res.status(200).json(response);
+  } catch (error) {
+    console.error(error);
+    
+    // If called from dashboard, throw error to be caught by Promise.allSettled
+    if (returnDataOnly) {
+      throw error;
+    }
+    
+    // Otherwise, send HTTP error response
+    const errorResponse = new ApiResponse(500, null, "Internal Server Error");
+    return res.status(500).json(errorResponse);
+  }
+};
 
 // ============ ACADEMIC STATISTICS ============
 
@@ -325,303 +363,349 @@ export const getAcademicStatistics = async () => {
     batches: batchStats,
     currentAcademicYear,
   };
-};//done
+};
 
 // ============ FINANCIAL STATISTICS ============
 
-export const getFinancialStatistics = async () => {
-  const currentFiscalYear = getCurrentFiscalYear();
+export const getFinancialStatistics = async (req, res) => {
+  try {
+    const currentFiscalYear = getCurrentFiscalYear();
 
-  const [
-    totalFeeCollection,
-    pendingFees,
-    departmentBudgets,
-    monthlyCollection,
-  ] = await Promise.all([
-    FeePayment.aggregate([
-      {
-        $match: {
-          status: "completed",
-          paymentDate: {
-            $gte: new Date(`${currentFiscalYear.split("-")[0]}-04-01`),
+    const [
+      totalFeeCollection,
+      pendingFees,
+      departmentBudgets,
+      monthlyCollection,
+    ] = await Promise.all([
+      FeePayment.aggregate([
+        {
+          $match: {
+            status: "completed",
+            paymentDate: {
+              $gte: new Date(`${currentFiscalYear.split("-")[0]}-04-01`),
+            },
           },
         },
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: "$amount" },
-          count: { $sum: 1 },
-        },
-      },
-    ]),
-
-    FeePayment.aggregate([
-      {
-        $match: {
-          status: { $in: ["pending", "overdue"] },
-        },
-      },
-      {
-        $group: {
-          _id: "$status",
-          total: { $sum: "$amount" },
-          count: { $sum: 1 },
-        },
-      },
-    ]),
-
-    Department.aggregate([
-      {
-        $match: { status: "active" },
-      },
-      {
-        $group: {
-          _id: null,
-          totalAllocated: { $sum: "$budget.allocated" },
-          totalUtilized: { $sum: "$budget.utilized" },
-        },
-      },
-    ]),
-
-    FeePayment.aggregate([
-      {
-        $match: {
-          status: "completed",
-          paymentDate: {
-            $gte: new Date(Date.now() - 12 * 30 * 24 * 60 * 60 * 1000),
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+            count: { $sum: 1 },
           },
         },
-      },
-      {
-        $group: {
-          _id: {
-            year: { $year: "$paymentDate" },
-            month: { $month: "$paymentDate" },
-          },
-          total: { $sum: "$amount" },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.year": -1, "_id.month": -1 } },
-    ]),
-  ]);
+      ]),
 
-  return {
-    totalCollection: totalFeeCollection[0] || { total: 0, count: 0 },
-    pendingFees: pendingFees.reduce((acc, item) => {
-      acc[item._id] = { total: item.total, count: item.count };
-      return acc;
-    }, {}),
-    departmentBudgets: departmentBudgets[0] || {
-      totalAllocated: 0,
-      totalUtilized: 0,
-    },
-    monthlyTrend: monthlyCollection,
-    currentFiscalYear,
-  };
-};//done
+      FeePayment.aggregate([
+        {
+          $match: {
+            status: { $in: ["pending", "overdue"] },
+          },
+        },
+        {
+          $group: {
+            _id: "$status",
+            total: { $sum: "$amount" },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+
+      Department.aggregate([
+        {
+          $match: { status: "active" },
+        },
+        {
+          $group: {
+            _id: null,
+            totalAllocated: { $sum: "$budget.allocated" },
+            totalUtilized: { $sum: "$budget.utilized" },
+          },
+        },
+      ]),
+
+      FeePayment.aggregate([
+        {
+          $match: {
+            status: "completed",
+            paymentDate: {
+              $gte: new Date(Date.now() - 12 * 30 * 24 * 60 * 60 * 1000),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$paymentDate" },
+              month: { $month: "$paymentDate" },
+            },
+            total: { $sum: "$amount" },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.year": -1, "_id.month": -1 } },
+      ]),
+    ]);
+
+    const response = {
+      totalCollection: totalFeeCollection[0] || { total: 0, count: 0 },
+      pendingFees: pendingFees.reduce((acc, item) => {
+        acc[item._id] = { total: item.total, count: item.count };
+        return acc;
+      }, {}),
+      departmentBudgets: departmentBudgets[0] || {
+        totalAllocated: 0,
+        totalUtilized: 0,
+      },
+      monthlyTrend: monthlyCollection,
+      currentFiscalYear,
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, response, "Financial statistics retrieved successfully"));
+  } catch (error) {
+    console.error("Error fetching financial statistics:", error);
+    return res.status(500).json(new ApiResponse(500, null, "Failed to retrieve financial statistics"));
+  }
+};
 
 // ============ SYSTEM HEALTH METRICS ============
 
-export const getSystemHealthMetrics = async () => {
-  const [dbStats, collectionStats, errorLogs] = await Promise.all([
-    // Database statistics
-    mongoose.connection.db.stats(),
+export const getSystemHealthMetrics = async (req, res) => {
+  try {
+    const [dbStats, collectionStats, errorLogs] = await Promise.all([
+      mongoose.connection.db.stats(),
 
-    // Collection sizes
-    Promise.all([
-      User.estimatedDocumentCount(),
-      Student.estimatedDocumentCount(),
-      Faculty.estimatedDocumentCount(),
-      Department.estimatedDocumentCount(),
-      Course.estimatedDocumentCount(),
-    ]).then(([users, students, faculty, departments, courses]) => ({
-      users,
-      students,
-      faculty,
-      departments,
-      courses,
-    })),
+      Promise.all([
+        User.estimatedDocumentCount(),
+        Student.estimatedDocumentCount(),
+        Faculty.estimatedDocumentCount(),
+        Department.estimatedDocumentCount(),
+        Course.estimatedDocumentCount(),
+      ]).then(([users, students, faculty, departments, courses]) => ({
+        users,
+        students,
+        faculty,
+        departments,
+        courses,
+      })),
 
-    // Recent error count (you'd implement this based on your logging system)
-    getRecentErrorCount(),
-  ]);
+      getRecentErrorCount(),
+    ]);
 
-  return {
-    database: {
-      size: dbStats.dataSize,
-      collections: dbStats.collections,
-      indexes: dbStats.indexes,
-      avgObjSize: dbStats.avgObjSize,
-    },
-    collections: collectionStats,
-    errors: errorLogs,
-    uptime: process.uptime(),
-    memoryUsage: process.memoryUsage(),
-    nodeVersion: process.version,
-  };
-};//done
+    const response = {
+      database: {
+        size: dbStats.dataSize,
+        collections: dbStats.collections,
+        indexes: dbStats.indexes,
+        avgObjSize: dbStats.avgObjSize,
+      },
+      collections: collectionStats,
+      errors: errorLogs,
+      uptime: process.uptime(),
+      memoryUsage: process.memoryUsage(),
+      nodeVersion: process.version,
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, response, "System health metrics retrieved successfully"));
+  } catch (error) {
+    console.error("Error fetching system health metrics:", error);
+    return res.status(500).json(new ApiResponse(500, null, "Failed to retrieve system health metrics"));
+  }
+};
 
 // ============ RECENT ACTIVITIES ============
 
-export const getRecentActivities = async () => {
-  const activities = [];
-  const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+export const getRecentActivities = async (req, res) => {
+  try {
+    const activities = [];
+    const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  // Recent user registrations
-  const recentUsers = await User.find({
-    createdAt: { $gte: last24Hours },
-    isDeleted: { $ne: true },
-  })
-    .select("firstName lastName role createdAt")
-    .sort({ createdAt: -1 })
-    .limit(10);
+    const recentUsers = await User.find({
+      createdAt: { $gte: last24Hours },
+      isDeleted: { $ne: true },
+    })
+      .select("firstName lastName role createdAt")
+      .sort({ createdAt: -1 })
+      .limit(10);
 
-  recentUsers.forEach((user) => {
-    activities.push({
-      type: "user_registration",
-      message: `New ${user.role} registered: ${user.firstName} ${user.lastName}`,
-      timestamp: user.createdAt,
-      severity: "info",
+    recentUsers.forEach((user) => {
+      activities.push({
+        type: "user_registration",
+        message: `New ${user.role} registered: ${user.firstName} ${user.lastName}`,
+        timestamp: user.createdAt,
+        severity: "info",
+      });
     });
-  });
 
-  // Recent department changes
-  const recentDeptChanges = await Department.find({
-    updatedAt: { $gte: last24Hours },
-  })
-    .select("name status updatedAt")
-    .sort({ updatedAt: -1 })
-    .limit(5);
+    const recentDeptChanges = await Department.find({
+      updatedAt: { $gte: last24Hours },
+    })
+      .select("name status updatedAt")
+      .sort({ updatedAt: -1 })
+      .limit(5);
 
-  recentDeptChanges.forEach((dept) => {
-    activities.push({
-      type: "department_update",
-      message: `Department ${dept.name} updated (Status: ${dept.status})`,
-      timestamp: dept.updatedAt,
-      severity: "info",
+    recentDeptChanges.forEach((dept) => {
+      activities.push({
+        type: "department_update",
+        message: `Department ${dept.name} updated (Status: ${dept.status})`,
+        timestamp: dept.updatedAt,
+        severity: "info",
+      });
     });
-  });
 
-  return activities
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .slice(0, 20);
-};//done
+    const sortedActivities = activities
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, 20);
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, sortedActivities, "Recent activities fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching recent activities:", error);
+    return res.status(500).json(new ApiResponse(500, null, "Failed to fetch recent activities"));
+  }
+};
 
 // ============ CRITICAL ALERTS ============
 
-export const getCriticalAlerts = async () => {
-  const alerts = [];
 
-  // Departments without HOD
-  const deptWithoutHOD = await Department.countDocuments({
-    hod: null,
-    status: "active",
-  });
+export const getCriticalAlerts = async (req, res) => {
+  try {
+    const alerts = [];
 
-  if (deptWithoutHOD > 0) {
-    alerts.push({
-      type: "department_hod_missing",
-      message: `${deptWithoutHOD} active departments without HOD`,
-      severity: "warning",
-      count: deptWithoutHOD,
+    const deptWithoutHOD = await Department.countDocuments({
+      hod: null,
+      status: "active",
     });
-  }
 
-  // Overdue fee payments
-  const overdueFees = await FeePayment.countDocuments({
-    status: "overdue",
-  });
+    if (deptWithoutHOD > 0) {
+      alerts.push({
+        type: "department_hod_missing",
+        message: `${deptWithoutHOD} active departments without HOD`,
+        severity: "warning",
+        count: deptWithoutHOD,
+      });
+    }
 
-  if (overdueFees > 0) {
-    alerts.push({
-      type: "overdue_fees",
-      message: `${overdueFees} overdue fee payments`,
-      severity: "critical",
-      count: overdueFees,
+    const overdueFees = await FeePayment.countDocuments({
+      status: "overdue",
     });
-  }
 
-  // Budget utilization over 90%
-  const overUtilizedDepts = await Department.aggregate([
-    {
-      $match: {
-        status: "active",
-        "budget.allocated": { $gt: 0 },
-      },
-    },
-    {
-      $project: {
-        name: 1,
-        utilizationPercentage: {
-          $multiply: [
-            { $divide: ["$budget.utilized", "$budget.allocated"] },
-            100,
-          ],
+    if (overdueFees > 0) {
+      alerts.push({
+        type: "overdue_fees",
+        message: `${overdueFees} overdue fee payments`,
+        severity: "critical",
+        count: overdueFees,
+      });
+    }
+
+    const overUtilizedDepts = await Department.aggregate([
+      {
+        $match: {
+          status: "active",
+          "budget.allocated": { $gt: 0 },
         },
       },
-    },
-    {
-      $match: { utilizationPercentage: { $gte: 90 } },
-    },
-  ]);
+      {
+        $project: {
+          name: 1,
+          utilizationPercentage: {
+            $multiply: [
+              { $divide: ["$budget.utilized", "$budget.allocated"] },
+              100,
+            ],
+          },
+        },
+      },
+      {
+        $match: { utilizationPercentage: { $gte: 90 } },
+      },
+    ]);
 
-  if (overUtilizedDepts.length > 0) {
-    alerts.push({
-      type: "budget_overutilization",
-      message: `${overUtilizedDepts.length} departments with >90% budget utilization`,
-      severity: "warning",
-      count: overUtilizedDepts.length,
-      details: overUtilizedDepts,
+    if (overUtilizedDepts.length > 0) {
+      alerts.push({
+        type: "budget_overutilization",
+        message: `${overUtilizedDepts.length} departments with >90% budget utilization`,
+        severity: "warning",
+        count: overUtilizedDepts.length,
+        details: overUtilizedDepts,
+      });
+    }
+
+    const suspiciousActivity = await User.countDocuments({
+      isActive: false,
+      lastLoginAttempt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
     });
+
+    if (suspiciousActivity > 0) {
+      alerts.push({
+        type: "suspicious_activity",
+        message: `${suspiciousActivity} inactive users with recent login attempts`,
+        severity: "critical",
+        count: suspiciousActivity,
+      });
+    }
+
+    return res.status(200).json(new ApiResponse(200, alerts, "Critical alerts fetched successfully"));
+  } catch (error) {
+    console.error("Error fetching critical alerts:", error);
+    return res.status(500).json(new ApiResponse(500, null, "Failed to fetch critical alerts"));
   }
+};
 
-  // Inactive users with recent login attempts
-  const suspiciousActivity = await User.countDocuments({
-    isActive: false,
-    lastLoginAttempt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-  });
-
-  if (suspiciousActivity > 0) {
-    alerts.push({
-      type: "suspicious_activity",
-      message: `${suspiciousActivity} inactive users with recent login attempts`,
-      severity: "critical",
-      count: suspiciousActivity,
-    });
-  }
-
-  return alerts;
-};//done
 
 // ============ HELPER FUNCTIONS ============
 
-export const getCurrentAcademicYear = () => {
+export const getCurrentAcademicYear = (req, res) => {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
-  // Academic year in India typically starts in June/July
-  return month < 6 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
-};//done
+  const academicYear = month < 6 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
 
-export const getCurrentFiscalYear = () => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  // Indian fiscal year runs from April to March
-  return month < 3 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
-};//done
+  return res.status(200).json(new ApiResponse(200, academicYear));
+};
 
-export const getRecentErrorCount = async () => {
-  // Implement based on your logging system
-  // This is a placeholder that should integrate with your actual error logging
-  return {
-    last24Hours: 0,
-    last7Days: 0,
-    criticalErrors: 0,
-  };
-};//done
+
+export const getCurrentFiscalYear = (req, res) => {
+  try {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    // Indian fiscal year runs from April (3) to March (2)
+    const fiscalYear = month < 3 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, { fiscalYear }, "Current fiscal year retrieved successfully"));
+  } catch (error) {
+    return res
+      .status(500)
+      .json(new ApiResponse(500, null, "Failed to retrieve current fiscal year"));
+  }
+};
+
+export const getRecentErrorCount = async (req, res) => {
+  try {
+    // Your existing logic or call to fetch error counts
+    const errorStats = {
+      last24Hours: 0,
+      last7Days: 0,
+      criticalErrors: 0,
+    };
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, errorStats, "Recent error counts retrieved successfully"));
+  } catch (error) {
+    return res
+      .status(500)
+      .json(new ApiResponse(500, null, "Failed to retrieve recent error counts"));
+  }
+};
 
 // ============ ADVANCED ANALYTICS ENDPOINTS ============
 
@@ -738,7 +822,7 @@ export const getDepartmentPerformanceMetrics = asyncHandler(
         ),
       );
   },
-);//done
+);
 
 export const getSystemResourceUsage = asyncHandler(async (req, res) => {
   const resourceUsage = {
@@ -752,7 +836,7 @@ export const getSystemResourceUsage = asyncHandler(async (req, res) => {
       host: mongoose.connection.host,
       name: mongoose.connection.name,
     },
-    collections: await getCollectionSizes(),
+    collections: await getCollectionSizes(req,res,true),
   };
 
   return res
@@ -764,31 +848,39 @@ export const getSystemResourceUsage = asyncHandler(async (req, res) => {
         "System resource usage retrieved successfully",
       ),
     );
-});//done
+});
 
-export const getCollectionSizes = async () => {
+
+export const getCollectionSizes = async (req, res, returnDataOnly) => {
   const collections = [
-    "users",
-    "departments",
-    "faculties",
-    "students",
-    "courses",
+    { name: "users", model: mongoose.model("User") },
+    { name: "departments", model: mongoose.model("Department") },
+    { name: "faculties", model: mongoose.model("Faculty") },
+    { name: "students", model: mongoose.model("Student") },
+    { name: "courses", model: mongoose.model("Course") },
   ];
-  const sizes = {};
 
+  const sizes = {};
   for (const collection of collections) {
     try {
-      const stats = await mongoose.connection.db.collection(collection).stats();
-      sizes[collection] = {
-        count: stats.count,
-        size: stats.size,
-        avgObjSize: stats.avgObjSize,
-        indexCount: stats.nindexes,
+      const count = await collection.model.countDocuments();
+      sizes[collection.name] = {
+        count,
+
       };
     } catch (error) {
-      sizes[collection] = { error: "Unable to fetch stats" };
+      console.error(`Error fetching stats for ${collection.name}:`, error);
+      sizes[collection.name] = { error: "Unable to fetch stats" };
     }
   }
 
-  return sizes;
-};//done
+  if(returnDataOnly==true){
+      return {sizes};
+    }else{
+        returnDataOnly=false;
+    }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, sizes, "Collection statistics retrieved successfully"));
+};
