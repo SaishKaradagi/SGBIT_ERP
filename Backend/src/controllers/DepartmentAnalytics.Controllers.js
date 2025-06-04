@@ -281,8 +281,92 @@ export const getDepartmentStatistics = async (req, res, returnDataOnly) => {
 
 // ============ ACADEMIC STATISTICS ============
 
-export const getAcademicStatistics = async () => {
-  const currentAcademicYear = getCurrentAcademicYear();
+// export const getAcademicStatistics = async () => {
+//   const currentAcademicYear = getCurrentAcademicYear();
+
+//   const [
+//     totalStudents,
+//     totalFaculty,
+//     totalCourses,
+//     attendanceStats,
+//     examStats,
+//     batchStats,
+//   ] = await Promise.all([
+//     Student.countDocuments({ isActive: true }),
+//     Faculty.countDocuments({ isActive: true }),
+//     Course.countDocuments({ isActive: true }),
+
+//     // Attendance statistics
+//     Attendance.aggregate([
+//       {
+//         $match: {
+//           date: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: "$status",
+//           count: { $sum: 1 },
+//         },
+//       },
+//     ]),
+
+//     // Recent exam statistics
+//     Exam.aggregate([
+//       {
+//         $match: {
+//           examDate: { $gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: "$examType",
+//           count: { $sum: 1 },
+//           avgStudents: { $avg: { $size: "$students" } },
+//         },
+//       },
+//     ]),
+
+//     // Batch statistics
+//     Batch.aggregate([
+//       {
+//         $match: { isActive: true },
+//       },
+//       {
+//         $lookup: {
+//           from: "students",
+//           localField: "_id",
+//           foreignField: "batch",
+//           as: "students",
+//         },
+//       },
+//       {
+//         $group: {
+//           _id: "$academicYear",
+//           batchCount: { $sum: 1 },
+//           totalStudents: { $sum: { $size: "$students" } },
+//         },
+//       },
+//       { $sort: { _id: -1 } },
+//     ]),
+//   ]);
+
+//   return {
+//     students: totalStudents,
+//     faculty: totalFaculty,
+//     courses: totalCourses,
+//     attendance: attendanceStats.reduce((acc, item) => {
+//       acc[item._id] = item.count;
+//       return acc;
+//     }, {}),
+//     exams: examStats,
+//     batches: batchStats,
+//     currentAcademicYear,
+//   };
+// };
+
+export const getAcademicStatistics = asyncHandler(async (req, res) => {
+  const currentAcademicYear = getCurrentAcademicYear(req, res, true);
 
   const [
     totalStudents,
@@ -292,11 +376,10 @@ export const getAcademicStatistics = async () => {
     examStats,
     batchStats,
   ] = await Promise.all([
-    Student.countDocuments({ isActive: true }),
+    Student.countDocuments(),
     Faculty.countDocuments({ isActive: true }),
-    Course.countDocuments({ isActive: true }),
+    Course.countDocuments(),
 
-    // Attendance statistics
     Attendance.aggregate([
       {
         $match: {
@@ -311,7 +394,6 @@ export const getAcademicStatistics = async () => {
       },
     ]),
 
-    // Recent exam statistics
     Exam.aggregate([
       {
         $match: {
@@ -327,10 +409,9 @@ export const getAcademicStatistics = async () => {
       },
     ]),
 
-    // Batch statistics
     Batch.aggregate([
       {
-        $match: { isActive: true },
+        $match: { status: 'active' },
       },
       {
         $lookup: {
@@ -351,7 +432,7 @@ export const getAcademicStatistics = async () => {
     ]),
   ]);
 
-  return {
+  const response = new ApiResponse(200, {
     students: totalStudents,
     faculty: totalFaculty,
     courses: totalCourses,
@@ -362,14 +443,20 @@ export const getAcademicStatistics = async () => {
     exams: examStats,
     batches: batchStats,
     currentAcademicYear,
-  };
-};
+  }, "Academic statistics fetched successfully");
+
+  return res.status(200).json(response);
+});
 
 // ============ FINANCIAL STATISTICS ============
 
 export const getFinancialStatistics = async (req, res) => {
   try {
-    const currentFiscalYear = getCurrentFiscalYear();
+    const { fiscalYear: currentFiscalYear } = getCurrentFiscalYear(
+      req,
+      res,
+      true,
+    );
 
     const [
       totalFeeCollection,
@@ -462,10 +549,20 @@ export const getFinancialStatistics = async (req, res) => {
 
     return res
       .status(200)
-      .json(new ApiResponse(200, response, "Financial statistics retrieved successfully"));
+      .json(
+        new ApiResponse(
+          200,
+          response,
+          "Financial statistics retrieved successfully",
+        ),
+      );
   } catch (error) {
     console.error("Error fetching financial statistics:", error);
-    return res.status(500).json(new ApiResponse(500, null, "Failed to retrieve financial statistics"));
+    return res
+      .status(500)
+      .json(
+        new ApiResponse(500, null, "Failed to retrieve financial statistics"),
+      );
   }
 };
 
@@ -490,7 +587,7 @@ export const getSystemHealthMetrics = async (req, res) => {
         courses,
       })),
 
-      getRecentErrorCount(),
+      getRecentErrorCount(req, res, true),
     ]);
 
     const response = {
@@ -660,35 +757,56 @@ export const getCriticalAlerts = async (req, res) => {
 
 // ============ HELPER FUNCTIONS ============
 
-export const getCurrentAcademicYear = (req, res) => {
+export const getCurrentAcademicYear = (req, res,returnDataOnly) => {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
   const academicYear = month < 6 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
 
+  if(returnDataOnly==true){
+      return academicYear;
+    }else{
+        returnDataOnly=false;
+    }
+
   return res.status(200).json(new ApiResponse(200, academicYear));
 };
 
 
-export const getCurrentFiscalYear = (req, res) => {
+export const getCurrentFiscalYear = (req, res, returnDataOnly) => {
   try {
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
     // Indian fiscal year runs from April (3) to March (2)
-    const fiscalYear = month < 3 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
+    const fiscalYear =
+      month < 3 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
+
+    if (returnDataOnly == true) {
+      return { fiscalYear };
+    } else {
+      returnDataOnly = false;
+    }
 
     return res
       .status(200)
-      .json(new ApiResponse(200, { fiscalYear }, "Current fiscal year retrieved successfully"));
+      .json(
+        new ApiResponse(
+          200,
+          { fiscalYear },
+          "Current fiscal year retrieved successfully",
+        ),
+      );
   } catch (error) {
     return res
       .status(500)
-      .json(new ApiResponse(500, null, "Failed to retrieve current fiscal year"));
+      .json(
+        new ApiResponse(500, null, "Failed to retrieve current fiscal year"),
+      );
   }
 };
 
-export const getRecentErrorCount = async (req, res) => {
+export const getRecentErrorCount = async (req, res, returnDataOnly) => {
   try {
     // Your existing logic or call to fetch error counts
     const errorStats = {
@@ -697,6 +815,11 @@ export const getRecentErrorCount = async (req, res) => {
       criticalErrors: 0,
     };
 
+    if(returnDataOnly==true){
+      return {errorStats};
+    }else{
+        returnDataOnly=false;
+    }
     return res
       .status(200)
       .json(new ApiResponse(200, errorStats, "Recent error counts retrieved successfully"));
