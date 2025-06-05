@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import User from "../models/user.model.js";
 import Department from "../models/department.model.js";
 import { Address } from "../models/address.model.js";
-import Faculty from "../models/Faculty.Model.js";
+import Faculty from "../models/faculty.model.js";
 
 import crypto from "crypto";
 import { asyncHandler } from "../middlewares/asyncHandler.middleware.js";
