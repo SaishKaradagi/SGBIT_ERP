@@ -30,6 +30,28 @@ import {
 } from "../controllers/DepartmentAnalytics.Controllers.js";
 
 
+
+// User Management Controllers (you'll need to create these)
+import {
+  getAllHODs,
+  getAllAdmins,
+  getDepartmentHOD,
+  getDepartmentAdmin,
+  updateAdminDetails,
+  getDepartmentFaculty,
+  getDepartmentStudents,
+  updateUserStatus,
+  getAllUsers,
+  getUserById,
+} from "../controllers/UserManagement.Controllers.js";
+
+import { 
+  deleteUser, 
+  restoreUser, 
+  getDeletedUsers, 
+  permanentlyDeleteUser 
+} from '../controllers/UserDeletion.Controllers.js';
+
 // Authentication Middleware
 import { verifyJWT, restrictTo } from "../middlewares/auth.Middleware.js";
 
@@ -61,6 +83,8 @@ router.patch(
   restrictTo("superAdmin"),
   updateDepartmentStatus,
 );
+
+
 
 // ============ DEPARTMENT STATISTICS ============
 
@@ -158,5 +182,97 @@ router.get(
   restrictTo("superAdmin", "admin"),
   getUserStatistics
 );
+
+
+
+
+
+
+// ============ USER MANAGEMENT ROUTES ============
+
+// 1) List All HODs
+router.get(
+  "/hods",
+  restrictTo("superAdmin", "admin"),
+  getAllHODs
+); //done
+
+// 2) List All Admins
+router.get(
+  "/admins",
+  restrictTo("superAdmin"),
+  getAllAdmins
+); //done
+
+// 3) Get particular HOD of a department
+router.get(
+  "/department/:id/hod",
+  restrictTo("superAdmin", "admin"),
+  getDepartmentHOD
+); //done
+
+// 4) Get particular admin of a department
+router.get(
+  "/department/:id/admin",
+  restrictTo("superAdmin", "admin"),
+  getDepartmentAdmin
+); //done
+
+// 5) Patch admin details
+router.patch(
+  "/admin/:id",
+  restrictTo("superAdmin"),
+  updateAdminDetails
+); //done
+
+// 6) Faculty list based on department
+router.get(
+  "/department/:id/faculty",
+  restrictTo("superAdmin", "admin", "hod"),
+  getDepartmentFaculty
+); //done
+
+// 7) Get all students based on department and semester
+router.get(
+  "/department/:id/students",
+  restrictTo("superAdmin", "admin", "hod"),
+  getDepartmentStudents
+); //done
+
+// 8) Delete user (role-based permissions)
+router.delete(
+  "/deleteUser/:id",
+  restrictTo("superAdmin", "admin", "hod"),
+  deleteUser
+);
+//8a)
+router.patch('/users/:id/restore',restrictTo("superAdmin"), restoreUser);
+//8b)
+router.get('/users/deleted', restrictTo("superAdmin", "admin", "hod"),getDeletedUsers);
+//8c)
+router.delete('/users/:id/permanent', restrictTo("superAdmin"),permanentlyDeleteUser);
+
+//all above done
+
+// 9) Super admin can patch any user by activating/deactivating
+router.patch(
+  "/user/:id/status",
+  restrictTo("superAdmin", "admin"),
+  updateUserStatus
+);//done
+
+// 10) List all users with filters (role, department, status)
+router.get(
+  "/users",
+  restrictTo("superAdmin", "admin"),
+  getAllUsers
+); //done
+
+// 11) Get specific user details
+router.get(
+  "/user/:id",
+  restrictTo("superAdmin", "admin", "hod"),
+  getUserById
+); //done
 
 export default router;

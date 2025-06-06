@@ -232,6 +232,24 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    isDeleted: {
+    type: Boolean,
+    default: false
+  },
+  deletedAt: {
+    type: Date,
+    default: null
+  },
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  status: {
+    type: String,
+    enum: ['active', 'inactive', 'terminated'],
+    default: 'active'
+  },
     // User Preferences
     metadata: {
       type: Object,
@@ -274,9 +292,9 @@ userSchema.virtual("displayName").get(function () {
   return this.fullName;
 });
 
-userSchema.virtual("initials").get(function () {
-  return (this.firstName.charAt(0) + this.lastName.charAt(0)).toUpperCase();
-});
+// userSchema.virtual("initials").get(function () {
+//   return (this.firstName.charAt(0) + this.lastName.charAt(0)).toUpperCase();
+// });
 
 // Instance methods (focused only on data operations, not business logic)
 
