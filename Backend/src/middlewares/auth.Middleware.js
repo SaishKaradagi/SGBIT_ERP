@@ -62,7 +62,8 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
     req.user = {
       _id: user._id,
       email: user.email,
-      role: user.role, // <- make sure this is included!
+      role: user.role,
+      status: user.status, // <- make sure this is included!
     };
     next();
   } catch (error) {
@@ -96,7 +97,7 @@ export const restrictTo = (...roles) => {
 };
 
 // Enhance the admin permission middleware to also handle department-scoped permissions
-export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
+export const hasAdminPermission = (privilege, scope) => {
   return asyncHandler(async (req, res, next) => {
     const user = req.user;
     console.log("User:", user);
@@ -203,6 +204,155 @@ export const hasAdminPermission = (privilege, scope = "GLOBAL") => {
   });
 };
 
+export const verifyAdminRole = asyncHandler(async (req, res, next) => {
+  try {
+    const userId = req.user?._id;
+    const userStatus = req.user?.status;
+
+    if (!userId) {
+      throw new ApiError(401, "Unauthorized request");
+    }
+
+    // Check if user is an admin
+    const admin = await Admin.findOne({ user: userId })
+      .populate("departmentScope", "name code status")
+      .populate("privileges");
+
+    if (!admin) {
+      throw new ApiError(403, "Access denied. Admin role required.");
+    }
+
+    // Check if admin is active
+    if (!userStatus || userStatus !== "active") {
+      throw new ApiError(403, "Admin account is inactive");
+    }
+
+    // Check if department is active (if admin is department-specific)
+    if (admin.department && admin.departmentScope.status !== "active") {
+      throw new ApiError(403, "Department is inactive");
+    }
+
+    // Add admin info to request object
+    req.user.adminInfo = admin;
+    req.user.departmentScope = admin.departmentScope || [];
+    req.user.adminPrivileges = admin.privileges;
+
+    next();
+  } catch (error) {
+    throw new ApiError(401, error?.message || "Invalid admin token");
+  }
+});
+
+export const requirePrivilege = (requiredPrivilege) => {
+  return asyncHandler(async (req, res, next) => {
+    const adminPrivileges = req.user?.adminPrivileges || [];
+
+    const hasPrivilege = adminPrivileges.some(
+      (privilege) => privilege.name === requiredPrivilege && privilege.isActive,
+    );
+
+    if (!hasPrivilege) {
+      throw new ApiError(
+        403,
+        `Access denied. Required privilege: ${requiredPrivilege}`,
+      );
+    }
+
+    next();
+  });
+};
+
+export const canManageDepartment = (
+  targetDepartmentIdField = "departmentId",
+) => {
+  return asyncHandler(async (req, res, next) => {
+    const adminDepartmentId = req.user?.departmentId;
+    const targetDepartmentId =
+      req.body[targetDepartmentIdField] || req.params[targetDepartmentIdField];
+
+    // Super admin can manage all departments
+    if (req.user?.adminInfo?.role === "super_admin") {
+      return next();
+    }
+
+    // Department admin can only manage their own department
+    if (
+      !adminDepartmentId ||
+      adminDepartmentId.toString() !== targetDepartmentId?.toString()
+    ) {
+      throw new ApiError(
+        403,
+        "Access denied. Can only manage your own department.",
+      );
+    }
+
+    next();
+  });
+};
+
+// Middleware to check if admin can manage faculty
+export const canManageFaculty = asyncHandler(async (req, res, next) => {
+  const adminDepartmentId = req.user?.departmentId;
+  const { facultyId } = req.body;
+
+  if (!facultyId) {
+    throw new ApiError(400, "Faculty ID is required");
+  }
+
+  // Super admin can manage all faculty
+  if (req.user?.adminInfo?.role === "super_admin") {
+    return next();
+  }
+
+  // Check if faculty belongs to admin's department
+  const Faculty = (await import("../models/faculty.model.js")).default;
+  const faculty = await Faculty.findById(facultyId);
+
+  if (!faculty) {
+    throw new ApiError(404, "Faculty not found");
+  }
+
+  if (faculty.department.toString() !== adminDepartmentId?.toString()) {
+    throw new ApiError(
+      403,
+      "Access denied. Faculty does not belong to your department.",
+    );
+  }
+
+  next();
+});
+
+// Middleware to check if admin can manage students
+export const canManageStudent = asyncHandler(async (req, res, next) => {
+  const adminDepartmentId = req.user?.departmentId;
+  const { studentId } = req.body;
+
+  if (!studentId) {
+    throw new ApiError(400, "Student ID is required");
+  }
+
+  // Super admin can manage all students
+  if (req.user?.adminInfo?.role === "super_admin") {
+    return next();
+  }
+
+  // Check if student belongs to admin's department
+  const Student = (await import("../models/student.model.js")).default;
+  const student = await Student.findById(studentId);
+
+  if (!student) {
+    throw new ApiError(404, "Student not found");
+  }
+
+  if (student.department.toString() !== adminDepartmentId?.toString()) {
+    throw new ApiError(
+      403,
+      "Access denied. Student does not belong to your department.",
+    );
+  }
+
+  next();
+});
 // Middleware for faculty-specific permissions
 // Enhanced version of hasFacultyPermission middleware
 // With department-based permissions logic

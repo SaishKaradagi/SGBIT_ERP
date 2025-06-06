@@ -15,6 +15,8 @@ import {
 
 const router = express.Router();
 
+router.use(verifyJWT);
+
 // ============ USER CREATION ROUTES ============
 // Super Admin can create other Super Admins
 router.post(

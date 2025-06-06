@@ -233,23 +233,18 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
     isDeleted: {
-    type: Boolean,
-    default: false
-  },
-  deletedAt: {
-    type: Date,
-    default: null
-  },
-  deletedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null
-  },
-  status: {
-    type: String,
-    enum: ['active', 'inactive', 'terminated'],
-    default: 'active'
-  },
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     // User Preferences
     metadata: {
       type: Object,

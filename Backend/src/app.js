@@ -9,6 +9,7 @@ import net from "net";
 import User from "./models/user.model.js";
 import UserCreation from "./routes/UserCreation.routes.js";
 import SuperAdmin from "./routes/SuperAdmin.routes.js";
+import AdminDashboard from "./routes/AdminDashboard.routes.js";
 // import { initializeSystem } from "./utils/initSuperAdmin.js";
 // Create Express app
 const app = express();
@@ -25,6 +26,8 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/UserCreation", UserCreation);
 //Department Creation
 app.use("/api/v1/SuperAdmin/", SuperAdmin);
+
+app.use("/api/v1/admin", AdminDashboard);
 
 // Add other routes here as your application grows
 // app.use("/api/v1/users", userRoutes);
