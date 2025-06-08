@@ -223,31 +223,66 @@ export const getFacultyList = asyncHandler(async (req, res) => {
 });
 
 export const assignHOD = asyncHandler(async (req, res) => {
-  const departmentId = getScopedDepartmentId(req);
-  const { facultyId } = req.body;
+  const departmentId = getScopedDepartmentId(req); // Get department scope
+  const {
+    facultyId,
+    previousHODNewDesignation = "Professor",
+    previousHODNewRole = "faculty",
+  } = req.body;
 
   if (!facultyId) {
     throw new ApiError(400, "Faculty ID is required");
   }
 
-  try {
-    const department = await Department.findById(departmentId);
-    if (!department) {
-      throw new ApiError(404, "Department not found");
-    }
-
-    await department.assignHOD(facultyId);
-
-    return res
-      .status(200)
-      .json(new ApiResponse(200, null, "HOD assigned successfully"));
-  } catch (error) {
-    throw new ApiError(400, error.message);
+  // Step 1: Get the department
+  const department = await Department.findById(departmentId);
+  if (!department) {
+    throw new ApiError(404, "Department not found");
   }
+
+  // Step 2: If old HOD exists, update their designation and role
+  if (department.hod) {
+    const prevHOD = await Faculty.findById(department.hod).populate("user");
+    if (prevHOD) {
+      prevHOD.designation = previousHODNewDesignation;
+      await prevHOD.save();
+
+      if (prevHOD.user) {
+        prevHOD.user.role = previousHODNewRole;
+        await prevHOD.user.save();
+      }
+    }
+  }
+
+  // Step 3: Update new HOD's designation and user role
+  const newHOD = await Faculty.findOne({ facultyId }).populate("user");
+  if (!newHOD) {
+    throw new ApiError(404, "Faculty not found");
+  }
+
+  newHOD.designation = "HOD";
+  await newHOD.save();
+
+  if (newHOD.user) {
+    newHOD.user.role = "hod";
+    await newHOD.user.save();
+  }
+
+  // Step 4: Assign new HOD to department
+  department.hod = newHOD._id;
+  await department.save();
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "HOD assigned successfully"));
 });
 
 export const removeHOD = asyncHandler(async (req, res) => {
   const departmentId = getScopedDepartmentId(req);
+  const {
+    previousHODNewDesignation = "Professor",
+    previousHODNewRole = "faculty",
+  } = req.body;
 
   try {
     const department = await Department.findById(departmentId);
@@ -255,11 +290,29 @@ export const removeHOD = asyncHandler(async (req, res) => {
       throw new ApiError(404, "Department not found");
     }
 
-    await department.removeHOD();
+    // If a HOD exists, update their designation and user role
+    if (department.hod) {
+      const prevHOD = await Faculty.findById(department.hod).populate("user");
+      if (prevHOD) {
+        // Update designation in Faculty
+        prevHOD.designation = previousHODNewDesignation;
+        await prevHOD.save();
+
+        // Update role in User
+        if (prevHOD.user) {
+          prevHOD.user.role = previousHODNewRole;
+          await prevHOD.user.save();
+        }
+      }
+    }
+
+    // Remove HOD from department
+    department.hod = undefined;
+    await department.save();
 
     return res
       .status(200)
-      .json(new ApiResponse(200, null, "HOD removed successfully"));
+      .json(new ApiResponse(200, null, "HOD removed and updated successfully"));
   } catch (error) {
     throw new ApiError(400, error.message);
   }
@@ -277,8 +330,8 @@ export const getStudentList = asyncHandler(async (req, res) => {
 
   const studentsQuery = Student.find(filter)
     .populate("user", "firstName middleName lastName email phone")
-    .populate("currentBatch", "name year")
-    .populate("programme", "name code")
+    .populate("batch", "name year")
+    .populate("department", "name code")
     .sort({ createdAt: -1 });
 
   if (search) {
@@ -338,7 +391,7 @@ export const getAcademicAnalytics = asyncHandler(async (req, res) => {
       },
       {
         $match: {
-          "studentInfo.department": mongoose.Types.ObjectId(departmentId),
+          "studentInfo.department": new mongoose.Types.ObjectId(departmentId),
         },
       },
       {
@@ -375,7 +428,7 @@ export const getAcademicAnalytics = asyncHandler(async (req, res) => {
       },
       {
         $match: {
-          "studentInfo.department": mongoose.Types.ObjectId(departmentId),
+          "studentInfo.department": new mongoose.Types.ObjectId(departmentId),
         },
       },
       {
@@ -407,7 +460,7 @@ export const getAcademicAnalytics = asyncHandler(async (req, res) => {
       },
       {
         $match: {
-          "studentInfo.department": mongoose.Types.ObjectId(departmentId),
+          "studentInfo.department": new mongoose.Types.ObjectId(departmentId),
         },
       },
       {
@@ -418,6 +471,10 @@ export const getAcademicAnalytics = asyncHandler(async (req, res) => {
         },
       },
     ]);
+
+    console.log("Attendance Stats:", attendanceStats);
+    console.log("Performance Stats:", performanceStats);
+    console.log("Fee Stats:", feeStats);
 
     return res.status(200).json(
       new ApiResponse(
@@ -439,25 +496,101 @@ export const getAcademicAnalytics = asyncHandler(async (req, res) => {
 // Notice Management
 export const createNotice = asyncHandler(async (req, res) => {
   const departmentId = getScopedDepartmentId(req);
-  const { title, content, priority, targetAudience, expiryDate } = req.body;
+  console.log("Received body:", req.body);
+  const {
+    title,
+    content,
+    noticeType,
+    isImportant,
+    status,
+    attachments,
+    targetAudience,
+    semester,
+    batch,
+    expiryDate: userExpiryDate,
+  } = req.body;
 
+  // Required field validation
   if (!title || !content) {
     throw new ApiError(400, "Title and content are required");
   }
 
+  // Process target audience
+  let processedAudience = ["ALL"];
+  if (targetAudience) {
+    processedAudience = Array.isArray(targetAudience)
+      ? targetAudience
+      : [targetAudience];
+
+    // Convert to uppercase and validate
+    processedAudience = processedAudience.map((aud) => aud.toUpperCase());
+    const validAudiences = [
+      "ALL",
+      "STUDENTS",
+      "FACULTY",
+      "ADMIN",
+      "FIRST_YEAR",
+      "SECOND_YEAR",
+      "THIRD_YEAR",
+      "FOURTH_YEAR",
+      "ALUMNI",
+      "PARENTS",
+    ];
+
+    for (const aud of processedAudience) {
+      if (!validAudiences.includes(aud)) {
+        throw new ApiError(400, `Invalid audience type: ${aud}`);
+      }
+    }
+  }
+
+  // Handle expiry date - auto delete after 7 days if not provided
+  let expiryDate = null;
+  let expiryMessage = "Notice will remain permanently";
+
+  if (userExpiryDate) {
+    expiryDate = new Date(userExpiryDate);
+    expiryMessage = `Notice will expire on ${expiryDate.toLocaleDateString()}`;
+  } else {
+    // Set default expiry to 7 days from now
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    expiryDate = sevenDaysFromNow;
+    expiryMessage =
+      "Notice will be automatically deleted after 7 days since no expiry was provided";
+  }
+
+  // Validate expiry date
+  if (expiryDate <= new Date()) {
+    throw new ApiError(400, "Expiry date must be in the future");
+  }
+
+  // Create notice
   const notice = await Notice.create({
     title,
     content,
-    priority: priority || "medium",
+    author: req.user._id,
     department: departmentId,
-    createdBy: req.user._id,
-    targetAudience: targetAudience || "all",
-    expiryDate: expiryDate ? new Date(expiryDate) : null,
+    noticeType: noticeType || "GENERAL",
+    isImportant: isImportant || false,
+    status: status || "PUBLISHED",
+    attachments: attachments || [],
+    targetAudience: processedAudience,
+    semester: semester || [],
+    batch: batch || [],
+    expiryDate,
   });
 
-  return res
-    .status(201)
-    .json(new ApiResponse(201, notice, "Notice created successfully"));
+  return res.status(201).json(
+    new ApiResponse(
+      201,
+      {
+        ...notice.toObject(),
+        expiryMessage,
+      },
+      `Notice created successfully. ${expiryMessage}`,
+    ),
+  );
 });
 
 export const getNotices = asyncHandler(async (req, res) => {
@@ -472,7 +605,7 @@ export const getNotices = asyncHandler(async (req, res) => {
   }
 
   const notices = await Notice.find(filter)
-    .populate("createdBy", "firstName lastName")
+    .populate("author", "firstName lastName")
     .sort({ createdAt: -1 })
     .skip((page - 1) * limit)
     .limit(parseInt(limit));
@@ -501,8 +634,7 @@ export const getCourseList = asyncHandler(async (req, res) => {
   const departmentId = getScopedDepartmentId(req);
 
   const courses = await Course.find({ department: departmentId })
-    .populate("courseType", "name")
-    .populate("prerequisites", "name code")
+    .populate("courseType", "name code") // this is defined as a virtual in your model
     .sort({ name: 1 });
 
   return res
@@ -512,12 +644,87 @@ export const getCourseList = asyncHandler(async (req, res) => {
 
 export const createCourse = asyncHandler(async (req, res) => {
   const departmentId = getScopedDepartmentId(req);
-  const courseData = {
-    ...req.body,
-    department: departmentId,
-  };
+  const userId = req.user?._id;
 
-  const course = await Course.create(courseData);
+  const {
+    code,
+    name,
+    description,
+    credits,
+    courseType,
+    syllabus,
+    status,
+    semester,
+    lectureHours,
+    tutorialHours,
+    practicalHours,
+    isLabCourse,
+    scheme,
+  } = req.body;
+
+  // ================== 🔍 Required Field Validation ==================
+  if (!code || !name || !credits || !courseType) {
+    throw new ApiError(400, "Code, name, credits, and courseType are required");
+  }
+
+  // ================== 🧼 Sanitize Inputs ==================
+  const sanitizedCode = code.trim().toUpperCase();
+  const sanitizedName = name.trim();
+  const sanitizedDescription = description?.trim() || "";
+  const sanitizedSyllabus = syllabus?.trim() || "";
+  const sanitizedStatus = status?.toLowerCase() || "active";
+
+  // ================== 🚫 Validate Status ==================
+  const allowedStatuses = ["active", "inactive", "archived"];
+  if (!allowedStatuses.includes(sanitizedStatus)) {
+    throw new ApiError(400, `Invalid status: ${status}`);
+  }
+
+  // ================== 🔢 Validate Credits ==================
+  const numericCredits = parseFloat(credits);
+  if (
+    isNaN(numericCredits) ||
+    numericCredits < 0 ||
+    numericCredits > 20 ||
+    !(numericCredits % 1 === 0 || numericCredits % 1 === 0.5)
+  ) {
+    throw new ApiError(
+      400,
+      "Credits must be a non-negative whole or half number ≤ 20",
+    );
+  }
+
+  // ================== 🔍 Check for Duplicate Course ==================
+  const existingCourse = await Course.findOne({ code: sanitizedCode });
+  if (existingCourse) {
+    throw new ApiError(409, `Course with code ${sanitizedCode} already exists`);
+  }
+
+  // ================== 🔍 Validate courseType Enum ==================
+  // const allowedCourseTypes = Object.values(VTU_COURSE_TYPES);
+  // if (!allowedCourseTypes.includes(courseType)) {
+  //   throw new ApiError(400, `Invalid courseType: ${courseType}`);
+  // }
+
+  // ================== ✅ Create Course Document ==================
+  const course = await Course.create({
+    code: sanitizedCode,
+    name: sanitizedName,
+    description: sanitizedDescription,
+    credits: numericCredits,
+    courseType,
+    syllabus: sanitizedSyllabus,
+    status: sanitizedStatus,
+    department: departmentId,
+    createdBy: userId,
+    updatedBy: userId,
+    semester,
+    lectureHours,
+    tutorialHours,
+    practicalHours,
+    isLabCourse,
+    scheme,
+  });
 
   return res
     .status(201)

@@ -31,22 +31,22 @@ router.get("/overview", getDashboardOverview); //done
 
 // Faculty Management Routes
 router.get("/faculty", getFacultyList); //done
-router.post("/faculty/assign-hod", assignHOD);
-router.delete("/faculty/remove-hod", removeHOD);
+router.post("/faculty/assign-hod", assignHOD); //done
+router.delete("/faculty/remove-hod", removeHOD); //done
 
 // Student Management Routes
-router.get("/students", getStudentList);
+router.get("/students", getStudentList); //done
 
 // Academic Analytics Routes
-router.get("/analytics/academic", getAcademicAnalytics);
+router.get("/analytics/academic", getAcademicAnalytics); //done
 
 // Notice Management Routes
-router.post("/notices", createNotice);
-router.get("/notices", getNotices);
+router.post("/notices", createNotice); //done
+router.get("/notices", getNotices); //done
 
 // Course Management Routes
-router.get("/courses", getCourseList);
-router.post("/courses", createCourse);
+router.get("/courses", getCourseList); //done
+router.post("/courses", createCourse); //done
 
 // Budget Management Routes
 router.put("/budget", updateBudget);
