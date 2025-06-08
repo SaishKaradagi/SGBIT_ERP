@@ -22,7 +22,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-
 // ============ USER MANAGEMENT STATISTICS ============
 
 export const getDashboardOverview = asyncHandler(async (req, res) => {
@@ -37,13 +36,13 @@ export const getDashboardOverview = asyncHandler(async (req, res) => {
       recentActivities,
       criticalAlerts,
     ] = await Promise.allSettled([
-      getUserStatistics(req, res, true),        // Add true flag
-      getDepartmentStatistics(req, res, true),  // Add true flag
-      getAcademicStatistics(req, res, true),   // Add true flag
-      getFinancialStatistics(req, res, true),  // Add true flag
-      getSystemHealthMetrics(req, res, true),  // Add true flag
-      getRecentActivities(req, res, true),     // Add true flag
-      getCriticalAlerts(req, res, true),       // Add true flag
+      getUserStatistics(req, res, true), // Add true flag
+      getDepartmentStatistics(req, res, true), // Add true flag
+      getAcademicStatistics(req, res, true), // Add true flag
+      getFinancialStatistics(req, res, true), // Add true flag
+      getSystemHealthMetrics(req, res, true), // Add true flag
+      getRecentActivities(req, res, true), // Add true flag
+      getCriticalAlerts(req, res, true), // Add true flag
     ]);
 
     // Handle any failed promises gracefully
@@ -175,7 +174,13 @@ export const getUserStatistics = async (req, res) => {
 
     return res
       .status(200)
-      .json(new ApiResponse(200, response, "User statistics retrieved successfully"));
+      .json(
+        new ApiResponse(
+          200,
+          response,
+          "User statistics retrieved successfully",
+        ),
+      );
   } catch (error) {
     console.error("Error fetching user statistics:", error);
     return res
@@ -185,7 +190,6 @@ export const getUserStatistics = async (req, res) => {
 };
 
 // ============ DEPARTMENT STATISTICS ============
-
 
 export const getDepartmentStatistics = async (req, res, returnDataOnly) => {
   try {
@@ -198,7 +202,9 @@ export const getDepartmentStatistics = async (req, res, returnDataOnly) => {
     ] = await Promise.all([
       Department.countDocuments(),
 
-      Department.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+      Department.aggregate([
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
 
       Department.countDocuments({ hod: null, status: "active" }),
 
@@ -254,25 +260,23 @@ export const getDepartmentStatistics = async (req, res, returnDataOnly) => {
     };
 
     // If called from dashboard, return data directly
-    if(returnDataOnly==true){
+    if (returnDataOnly == true) {
       return responseData;
-    }else{
-        returnDataOnly=false;
+    } else {
+      returnDataOnly = false;
     }
-    
-    
 
     // Otherwise, send HTTP response as usual
     const response = new ApiResponse(200, responseData);
     return res.status(200).json(response);
   } catch (error) {
     console.error(error);
-    
+
     // If called from dashboard, throw error to be caught by Promise.allSettled
     if (returnDataOnly) {
       throw error;
     }
-    
+
     // Otherwise, send HTTP error response
     const errorResponse = new ApiResponse(500, null, "Internal Server Error");
     return res.status(500).json(errorResponse);
@@ -411,7 +415,7 @@ export const getAcademicStatistics = asyncHandler(async (req, res) => {
 
     Batch.aggregate([
       {
-        $match: { status: 'active' },
+        $match: { status: "active" },
       },
       {
         $lookup: {
@@ -432,18 +436,22 @@ export const getAcademicStatistics = asyncHandler(async (req, res) => {
     ]),
   ]);
 
-  const response = new ApiResponse(200, {
-    students: totalStudents,
-    faculty: totalFaculty,
-    courses: totalCourses,
-    attendance: attendanceStats.reduce((acc, item) => {
-      acc[item._id] = item.count;
-      return acc;
-    }, {}),
-    exams: examStats,
-    batches: batchStats,
-    currentAcademicYear,
-  }, "Academic statistics fetched successfully");
+  const response = new ApiResponse(
+    200,
+    {
+      students: totalStudents,
+      faculty: totalFaculty,
+      courses: totalCourses,
+      attendance: attendanceStats.reduce((acc, item) => {
+        acc[item._id] = item.count;
+        return acc;
+      }, {}),
+      exams: examStats,
+      batches: batchStats,
+      currentAcademicYear,
+    },
+    "Academic statistics fetched successfully",
+  );
 
   return res.status(200).json(response);
 });
@@ -606,10 +614,20 @@ export const getSystemHealthMetrics = async (req, res) => {
 
     return res
       .status(200)
-      .json(new ApiResponse(200, response, "System health metrics retrieved successfully"));
+      .json(
+        new ApiResponse(
+          200,
+          response,
+          "System health metrics retrieved successfully",
+        ),
+      );
   } catch (error) {
     console.error("Error fetching system health metrics:", error);
-    return res.status(500).json(new ApiResponse(500, null, "Failed to retrieve system health metrics"));
+    return res
+      .status(500)
+      .json(
+        new ApiResponse(500, null, "Failed to retrieve system health metrics"),
+      );
   }
 };
 
@@ -659,15 +677,22 @@ export const getRecentActivities = async (req, res) => {
 
     return res
       .status(200)
-      .json(new ApiResponse(200, sortedActivities, "Recent activities fetched successfully"));
+      .json(
+        new ApiResponse(
+          200,
+          sortedActivities,
+          "Recent activities fetched successfully",
+        ),
+      );
   } catch (error) {
     console.error("Error fetching recent activities:", error);
-    return res.status(500).json(new ApiResponse(500, null, "Failed to fetch recent activities"));
+    return res
+      .status(500)
+      .json(new ApiResponse(500, null, "Failed to fetch recent activities"));
   }
 };
 
 // ============ CRITICAL ALERTS ============
-
 
 export const getCriticalAlerts = async (req, res) => {
   try {
@@ -747,31 +772,36 @@ export const getCriticalAlerts = async (req, res) => {
       });
     }
 
-    return res.status(200).json(new ApiResponse(200, alerts, "Critical alerts fetched successfully"));
+    return res
+      .status(200)
+      .json(
+        new ApiResponse(200, alerts, "Critical alerts fetched successfully"),
+      );
   } catch (error) {
     console.error("Error fetching critical alerts:", error);
-    return res.status(500).json(new ApiResponse(500, null, "Failed to fetch critical alerts"));
+    return res
+      .status(500)
+      .json(new ApiResponse(500, null, "Failed to fetch critical alerts"));
   }
 };
 
-
 // ============ HELPER FUNCTIONS ============
 
-export const getCurrentAcademicYear = (req, res,returnDataOnly) => {
+export const getCurrentAcademicYear = (req, res, returnDataOnly) => {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
-  const academicYear = month < 6 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
+  const academicYear =
+    month < 6 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
 
-  if(returnDataOnly==true){
-      return academicYear;
-    }else{
-        returnDataOnly=false;
-    }
+  if (returnDataOnly == true) {
+    return academicYear;
+  } else {
+    returnDataOnly = false;
+  }
 
   return res.status(200).json(new ApiResponse(200, academicYear));
 };
-
 
 export const getCurrentFiscalYear = (req, res, returnDataOnly) => {
   try {
@@ -815,18 +845,26 @@ export const getRecentErrorCount = async (req, res, returnDataOnly) => {
       criticalErrors: 0,
     };
 
-    if(returnDataOnly==true){
-      return {errorStats};
-    }else{
-        returnDataOnly=false;
+    if (returnDataOnly == true) {
+      return { errorStats };
+    } else {
+      returnDataOnly = false;
     }
     return res
       .status(200)
-      .json(new ApiResponse(200, errorStats, "Recent error counts retrieved successfully"));
+      .json(
+        new ApiResponse(
+          200,
+          errorStats,
+          "Recent error counts retrieved successfully",
+        ),
+      );
   } catch (error) {
     return res
       .status(500)
-      .json(new ApiResponse(500, null, "Failed to retrieve recent error counts"));
+      .json(
+        new ApiResponse(500, null, "Failed to retrieve recent error counts"),
+      );
   }
 };
 
@@ -870,7 +908,7 @@ export const getDetailedUserAnalytics = asyncHandler(async (req, res) => {
         "Detailed user analytics retrieved successfully",
       ),
     );
-});//done
+}); //done
 
 export const getDepartmentPerformanceMetrics = asyncHandler(
   async (req, res) => {
@@ -959,7 +997,7 @@ export const getSystemResourceUsage = asyncHandler(async (req, res) => {
       host: mongoose.connection.host,
       name: mongoose.connection.name,
     },
-    collections: await getCollectionSizes(req,res,true),
+    collections: await getCollectionSizes(req, res, true),
   };
 
   return res
@@ -972,7 +1010,6 @@ export const getSystemResourceUsage = asyncHandler(async (req, res) => {
       ),
     );
 });
-
 
 export const getCollectionSizes = async (req, res, returnDataOnly) => {
   const collections = [
@@ -989,7 +1026,6 @@ export const getCollectionSizes = async (req, res, returnDataOnly) => {
       const count = await collection.model.countDocuments();
       sizes[collection.name] = {
         count,
-
       };
     } catch (error) {
       console.error(`Error fetching stats for ${collection.name}:`, error);
@@ -997,13 +1033,19 @@ export const getCollectionSizes = async (req, res, returnDataOnly) => {
     }
   }
 
-  if(returnDataOnly==true){
-      return {sizes};
-    }else{
-        returnDataOnly=false;
-    }
+  if (returnDataOnly == true) {
+    return { sizes };
+  } else {
+    returnDataOnly = false;
+  }
 
   return res
     .status(200)
-    .json(new ApiResponse(200, sizes, "Collection statistics retrieved successfully"));
+    .json(
+      new ApiResponse(
+        200,
+        sizes,
+        "Collection statistics retrieved successfully",
+      ),
+    );
 };
