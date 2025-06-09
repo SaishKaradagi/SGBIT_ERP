@@ -207,5 +207,96 @@ studentSchema.methods.getAllAddresses = async function () {
   return Address.getUserAddresses(this.user);
 };
 
+// Enhanced Student Model Updates (student.model.js additions)
+// Add these methods to your existing student model:
+
+// Method to update CGPA
+studentSchema.methods.updateCGPA = async function () {
+  const { ExamResult } = await import("./examResult.model.js");
+  const cgpa = await ExamResult.calculateCGPA(this._id);
+
+  this.academics.cgpa = parseFloat(cgpa);
+  await this.save();
+
+  return this.academics.cgpa;
+};
+
+// Method to get current semester results
+studentSchema.methods.getCurrentSemesterResults = async function () {
+  const { ExamResult } = await import("./examResult.model.js");
+  const { Semester } = await import("./semester.model.js");
+
+  const currentSemester = await Semester.findOne({
+    number: this.academics.currentSemester,
+    status: "current",
+  });
+
+  if (!currentSemester) return [];
+
+  return await ExamResult.findByStudent(this._id)
+    .where("semester")
+    .equals(currentSemester._id);
+};
+
+// Method to get all backlogs
+studentSchema.methods.getBacklogs = async function () {
+  const { ExamResult } = await import("./examResult.model.js");
+  return await ExamResult.findBacklogs(this._id);
+};
+
+// Method to update backlog count
+studentSchema.methods.updateBacklogCount = async function () {
+  const backlogs = await this.getBacklogs();
+  this.academics.backlogCount = backlogs.length;
+  await this.save();
+  return this.academics.backlogCount;
+};
+
+// Virtual for academic performance summary
+studentSchema.virtual("academicSummary").get(function () {
+  return {
+    currentSemester: this.academics.currentSemester,
+    cgpa: this.academics.cgpa,
+    backlogCount: this.academics.backlogCount,
+    performance:
+      this.academics.cgpa >= 8.5
+        ? "Excellent"
+        : this.academics.cgpa >= 7.0
+          ? "Good"
+          : this.academics.cgpa >= 6.0
+            ? "Average"
+            : "Poor",
+  };
+});
+
+// Static method for department-scoped student queries
+studentSchema.statics.findByDepartmentScoped = function (
+  departmentId,
+  options = {},
+) {
+  const query = this.find({ department: departmentId });
+
+  if (options.batch) query.where("batch").equals(options.batch);
+  if (options.semester)
+    query.where("academics.currentSemester").equals(options.semester);
+  if (options.proctor) query.where("proctor").equals(options.proctor);
+  if (options.section) query.where("section").equals(options.section);
+  if (options.search) {
+    query.or([
+      { usn: new RegExp(options.search, "i") },
+      { "user.firstName": new RegExp(options.search, "i") },
+      { "user.lastName": new RegExp(options.search, "i") },
+      { "user.email": new RegExp(options.search, "i") },
+    ]);
+  }
+
+  return query
+    .populate("user", "firstName middleName lastName email phone")
+    .populate("department", "name code")
+    .populate("batch", "code academicYear")
+    .populate("proctor", "user")
+    .sort(options.sort || { createdAt: -1 });
+};
+
 const Student = mongoose.model("Student", studentSchema);
 export default Student;

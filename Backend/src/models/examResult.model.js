@@ -1,191 +1,203 @@
 import mongoose from "mongoose";
-import { v4 as uuidv4 } from "uuid";
 
 const examResultSchema = new mongoose.Schema(
   {
     uuid: {
       type: String,
+      default: () => crypto.randomUUID(),
       unique: true,
-      default: uuidv4,
       immutable: true,
-      index: true, // Added indexing for direct UUID lookups
     },
-    studentId: {
+    student: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Student",
-      required: [true, "Student ID is required"],
-      index: true,
-    },
-    subjectCode: {
-      type: String,
-      required: [true, "Subject code is required"],
-      trim: true,
-      uppercase: true,
-    },
-    marksObtained: {
-      type: mongoose.Schema.Types.Decimal128,
-      required: [true, "Marks obtained is required"],
-      validate: {
-        validator: function (v) {
-          // Marks must be non-negative
-          if (parseFloat(v) < 0) return false;
-
-          // Check if marks obtained don't exceed total marks (if exam is available)
-          // This will be verified in the pre-save hook more thoroughly
-          return true;
-        },
-        message: (props) =>
-          `Marks obtained must be non-negative and cannot exceed total marks`,
-      },
-    },
-    outOfMarks: {
-      type: mongoose.Schema.Types.Decimal128,
-      required: [true, "Total marks is required"],
-      validate: {
-        validator: (v) => parseFloat(v) > 0,
-        message: "Total marks must be greater than 0",
-      },
-    },
-    percentage: {
-      type: mongoose.Schema.Types.Decimal128,
       required: true,
+    },
+    course: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Course",
+      required: true,
+    },
+    semester: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Semester",
+      required: true,
+    },
+    academicYear: {
+      type: String,
+      required: true,
+      match: /^\d{4}-\d{4}$/,
+    },
+    // VTU Assessment Components
+    cieMarks: {
+      type: Number,
+      min: 0,
+      max: 50,
       default: 0,
     },
-    gradeScaleId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "GradeScale",
-      required: [true, "Grade scale ID is required"],
+    externalMarks: {
+      type: Number,
+      min: 0,
+      max: 50,
+      default: 0,
     },
-    resultStatus: {
-      type: String,
-      enum: {
-        values: [
-          "pass",
-          "fail",
-          "absent",
-          "malpractice",
-          "withheld",
-          "incomplete",
-        ],
-        message: "{VALUE} is not a valid result status",
-      },
-      required: [true, "Result status is required"],
+    totalMarks: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
     },
-    evaluatedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Faculty",
-      required: [true, "Evaluator information is required"],
+    percentage: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
     },
     gradeLetter: {
       type: String,
-      trim: true,
+      enum: ["O", "A+", "A", "B+", "B", "C", "D", "F"],
+      uppercase: true,
     },
-    gradePoints: {
+    gradePoint: {
       type: Number,
+      min: 0,
+      max: 10,
+      default: 0,
+    },
+    credits: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 5,
+    },
+    // Status tracking
+    status: {
+      type: String,
+      enum: ["PASS", "FAIL", "ABSENT", "WITHHELD", "REVALUATION"],
+      default: function () {
+        return this.totalMarks >= 40 ? "PASS" : "FAIL";
+      },
+    },
+    isBacklog: {
+      type: Boolean,
+      default: function () {
+        return this.status === "FAIL" || this.status === "ABSENT";
+      },
+    },
+    attemptNumber: {
+      type: Number,
+      default: 1,
+      min: 1,
+      max: 6, // VTU allows up to 6 attempts
+    },
+    examType: {
+      type: String,
+      enum: ["REGULAR", "SUPPLEMENTARY", "REVALUATION"],
+      default: "REGULAR",
+    },
+    resultDate: {
+      type: Date,
+      default: Date.now,
+    },
+    publishedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      required: true,
     },
   },
   {
     timestamps: true,
-    toJSON: { getters: true, virtuals: true },
-    toObject: { getters: true, virtuals: true },
   },
 );
 
-// Virtual field for performance indicator
-examResultSchema.virtual("performanceIndicator").get(function () {
-  const percentage = parseFloat(this.percentage);
+// Calculate total marks and grade before saving
+examResultSchema.pre("save", async function (next) {
+  if (this.isModified("cieMarks") || this.isModified("externalMarks")) {
+    this.totalMarks = this.cieMarks + this.externalMarks;
+    this.percentage = this.totalMarks;
 
-  if (percentage >= 90) return "excellent";
-  if (percentage >= 75) return "veryGood";
-  if (percentage >= 60) return "good";
-  if (percentage >= 50) return "average";
-  if (percentage >= parseFloat(this.passingPercentage)) return "satisfactory";
-  return "needsImprovement";
+    // Import GradeScale model to calculate grade
+    const { GradeScale } = await import("./gradeScale.model.js");
+    const grade = GradeScale.calculateGrade(this.percentage);
+
+    this.gradeLetter = grade.gradeLetter;
+    this.gradePoint = grade.gradePoint;
+    this.status = this.totalMarks >= 40 ? "PASS" : "FAIL";
+    this.isBacklog = this.status === "FAIL" || this.status === "ABSENT";
+  }
+  next();
 });
 
-// Virtual field for passing percentage (calculated from exam model)
-examResultSchema.virtual("passingPercentage").get(function () {
-  // This will be populated during queries that compute this value
-  return this._passingPercentage || 40; // Default fallback
-});
+// Compound indexes for efficient queries
+examResultSchema.index(
+  { student: 1, course: 1, semester: 1 },
+  { unique: true },
+);
+examResultSchema.index({ student: 1, academicYear: 1 });
+examResultSchema.index({ department: 1, semester: 1 });
+examResultSchema.index({ status: 1, isBacklog: 1 });
 
-// Removing the unique constraint that used examId which is no longer in the schema
-
-// Removing indexes that used missing fields (isVerified, isPublished, revaluationRequested, revaluationStatus)
-
-// Update grade scale based on marks
-examResultSchema.methods.updateGradeScale = async function () {
-  const percentage = parseFloat(this.percentage);
-
-  const gradeScale = await mongoose
-    .model("GradeScale")
-    .findOne({
-      lowerLimit: { $lte: percentage },
-      upperLimit: { $gte: percentage },
-    })
-    .sort({ upperLimit: -1 }); // Sort to get the highest matching grade if multiple ranges match
-
-  if (!gradeScale)
-    throw new Error(
-      "No matching grade scale found for the calculated percentage",
-    );
-
-  this.gradeScaleId = gradeScale._id;
-  this.gradeLetter = gradeScale.gradeName;
-  this.gradePoints = gradeScale.gradePoints;
-
-  return this.save();
+// Static methods
+examResultSchema.statics.findByStudent = function (studentId) {
+  return this.find({ student: studentId })
+    .populate("course", "name code credits")
+    .populate("semester", "number term academicYear")
+    .sort({ createdAt: -1 });
 };
 
-// Pre-save hook to validate and compute values
-examResultSchema.pre("save", async function (next) {
-  try {
-    // Skip extensive validation for absent students
-    if (this.resultStatus === "absent") {
-      next();
-      return;
-    }
+examResultSchema.statics.findBacklogs = function (studentId) {
+  return this.find({ student: studentId, isBacklog: true })
+    .populate("course", "name code credits")
+    .populate("semester", "number term academicYear");
+};
 
-    // Calculate percentage if marks and outOfMarks are available
-    if (this.isModified("marksObtained") || this.isModified("outOfMarks")) {
-      const marks = parseFloat(this.marksObtained);
-      const total = parseFloat(this.outOfMarks);
+examResultSchema.statics.calculateSGPA = async function (
+  studentId,
+  semesterId,
+) {
+  const results = await this.find({
+    student: studentId,
+    semester: semesterId,
+    status: "PASS",
+  }).populate("course", "credits");
 
-      if (total > 0) {
-        this.percentage = (marks / total) * 100;
-      }
-    }
+  if (results.length === 0) return 0;
 
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
+  const totalGradePoints = results.reduce((sum, result) => {
+    return sum + result.gradePoint * result.credits;
+  }, 0);
 
-// Handle deleted students by checking references before save
-examResultSchema.pre("save", async function (next) {
-  try {
-    const student = await mongoose.model("Student").findById(this.studentId);
-    if (!student) {
-      return next(
-        new Error("Referenced student not found or has been deleted"),
-      );
-    }
+  const totalCredits = results.reduce((sum, result) => {
+    return sum + result.credits;
+  }, 0);
 
-    const gradeScale = await mongoose
-      .model("GradeScale")
-      .findById(this.gradeScaleId);
-    if (!gradeScale) {
-      return next(
-        new Error("Referenced grade scale not found or has been deleted"),
-      );
-    }
+  return totalCredits > 0 ? (totalGradePoints / totalCredits).toFixed(2) : 0;
+};
 
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
+examResultSchema.statics.calculateCGPA = async function (studentId) {
+  const results = await this.find({
+    student: studentId,
+    status: "PASS",
+  }).populate("course", "credits");
 
-const ExamResult = mongoose.model("ExamResult", examResultSchema);
+  if (results.length === 0) return 0;
+
+  const totalGradePoints = results.reduce((sum, result) => {
+    return sum + result.gradePoint * result.credits;
+  }, 0);
+
+  const totalCredits = results.reduce((sum, result) => {
+    return sum + result.credits;
+  }, 0);
+
+  return totalCredits > 0 ? (totalGradePoints / totalCredits).toFixed(2) : 0;
+};
+
+export const ExamResult = mongoose.model("ExamResult", examResultSchema);
+
 export default ExamResult;

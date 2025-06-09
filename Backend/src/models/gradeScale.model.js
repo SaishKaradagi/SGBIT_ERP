@@ -1,183 +1,129 @@
 import mongoose from "mongoose";
 
-/**
- * GradeScale Schema - Defines grading system used in the college
- * Used for academic evaluation and calculation of SGPA/CGPA as per Indian standards
- */
 const gradeScaleSchema = new mongoose.Schema(
   {
-    code: {
+    uuid: {
       type: String,
+      default: () => crypto.randomUUID(),
       unique: true,
-      required: [true, "Grade code is required"],
-      trim: true,
-      uppercase: true, // Automatically convert to uppercase
-      maxlength: [5, "Grade code cannot exceed 5 characters"],
+      immutable: true,
     },
-    gradeName: {
+    gradeLetter: {
       type: String,
-      required: [true, "Grade name is required"],
-      trim: true,
-      maxlength: [30, "Grade name cannot exceed 30 characters"],
+      required: true,
+      enum: ["O", "A+", "A", "B+", "B", "C", "D", "F"],
+      uppercase: true,
     },
-    lowerLimit: {
-      type: mongoose.Types.Decimal128,
-      required: [true, "Lower limit is required"],
-      get: (v) => parseFloat(v.toString()), // Convert Decimal128 to Number for easier usage
-      validate: {
-        validator: function (v) {
-          return parseFloat(v) >= 0 && parseFloat(v) <= 100;
-        },
-        message: "Lower limit must be between 0 and 100",
-      },
+    gradePoint: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 10,
     },
-    upperLimit: {
-      type: mongoose.Types.Decimal128,
-      required: [true, "Upper limit is required"],
-      get: (v) => parseFloat(v.toString()), // Convert Decimal128 to Number for easier usage
-      validate: {
-        validator: function (v) {
-          return parseFloat(v) >= 0 && parseFloat(v) <= 100;
-        },
-        message: "Upper limit must be between 0 and 100",
-      },
+    minPercentage: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 100,
     },
-    gradePoints: {
-      type: mongoose.Types.Decimal128,
-      required: [true, "Grade points are required"],
-      get: (v) => parseFloat(v.toString()), // Convert Decimal128 to Number for easier usage
-      validate: {
-        validator: function (v) {
-          return parseFloat(v) >= 0 && parseFloat(v) <= 10;
-        },
-        message:
-          "Grade points must be between 0 and 10 as per Indian academic standards",
-      },
+    maxPercentage: {
+      type: Number,
+      required: true,
+      min: 0,
+      max: 100,
+    },
+    description: {
+      type: String,
+      required: true,
     },
     isActive: {
       type: Boolean,
       default: true,
     },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
   },
   {
     timestamps: true,
-    toJSON: { getters: true },
-    toObject: { getters: true },
   },
 );
 
-// Pre-save validation to ensure upperLimit > lowerLimit
-gradeScaleSchema.pre("save", function (next) {
-  if (parseFloat(this.upperLimit) < parseFloat(this.lowerLimit)) {
-    return next(
-      new Error("Upper limit must be greater than or equal to lower limit"),
-    );
-  }
-  next();
-});
-
-// Basic static methods
-gradeScaleSchema.statics = {
-  /**
-   * Find grade by code
-   * @param {String} code - Grade code
-   * @returns {Promise<Document>}
-   */
-  async findByCode(code) {
-    return this.findOne({ code: code.toUpperCase(), isActive: true }).exec();
-  },
-
-  /**
-   * Find appropriate grade for given marks
-   * @param {Number} marks - Student's marks
-   * @returns {Promise<Document>}
-   */
-  async findByMarks(marks) {
-    const numMarks = parseFloat(marks);
-    return this.findOne({
-      lowerLimit: { $lte: numMarks },
-      upperLimit: { $gte: numMarks },
-      isActive: true,
-    }).exec();
-  },
-
-  /**
-   * List all active grade scales
-   * @returns {Promise<Array>}
-   */
-  listAllGrades() {
-    return this.find({ isActive: true }).sort({ gradePoints: -1 }).exec();
-  },
-
-  /**
-   * Check if a grade code exists
-   * @param {String} code - Grade code
-   * @returns {Promise<Boolean>}
-   */
-  async exists(code) {
-    return (await this.countDocuments({ code: code.toUpperCase() })) > 0;
-  },
-
-  /**
-   * Calculate SGPA for a set of courses
-   * @param {Array} courseGrades - Array of {courseId, credits, grade} objects
-   * @returns {Number} - SGPA value
-   */
-  calculateSGPA(courseGrades) {
-    if (!courseGrades || courseGrades.length === 0) return 0;
-
-    let totalCredits = 0;
-    let totalGradePoints = 0;
-
-    courseGrades.forEach((course) => {
-      totalCredits += course.credits;
-      totalGradePoints += course.credits * course.gradePoints;
-    });
-
-    return totalCredits > 0 ? (totalGradePoints / totalCredits).toFixed(2) : 0;
-  },
+// VTU Standard Grade Scale
+gradeScaleSchema.statics.getVTUGradeScale = function () {
+  return [
+    {
+      gradeLetter: "O",
+      gradePoint: 10,
+      minPercentage: 90,
+      maxPercentage: 100,
+      description: "Outstanding",
+    },
+    {
+      gradeLetter: "A+",
+      gradePoint: 9,
+      minPercentage: 80,
+      maxPercentage: 89,
+      description: "Excellent",
+    },
+    {
+      gradeLetter: "A",
+      gradePoint: 8,
+      minPercentage: 70,
+      maxPercentage: 79,
+      description: "Very Good",
+    },
+    {
+      gradeLetter: "B+",
+      gradePoint: 7,
+      minPercentage: 60,
+      maxPercentage: 69,
+      description: "Good",
+    },
+    {
+      gradeLetter: "B",
+      gradePoint: 6,
+      minPercentage: 55,
+      maxPercentage: 59,
+      description: "Above Average",
+    },
+    {
+      gradeLetter: "C",
+      gradePoint: 5,
+      minPercentage: 50,
+      maxPercentage: 54,
+      description: "Average",
+    },
+    {
+      gradeLetter: "D",
+      gradePoint: 4,
+      minPercentage: 40,
+      maxPercentage: 49,
+      description: "Satisfactory",
+    },
+    {
+      gradeLetter: "F",
+      gradePoint: 0,
+      minPercentage: 0,
+      maxPercentage: 39,
+      description: "Fail",
+    },
+  ];
 };
 
-// Instance methods
-gradeScaleSchema.methods = {
-  /**
-   * Get letter grade for a numeric score
-   * @param {Number} score - Numeric score
-   * @returns {String} - Letter grade
-   */
-  getLetterGrade(score) {
-    const numScore = parseFloat(score);
-    if (
-      numScore >= parseFloat(this.lowerLimit) &&
-      numScore <= parseFloat(this.upperLimit)
-    ) {
-      return this.code;
-    }
-    return null;
-  },
-
-  /**
-   * Check if the grade is a passing grade
-   * @returns {Boolean}
-   */
-  isPassingGrade() {
-    // In most Indian universities, grades with points > 0 are passing grades
-    return (
-      parseFloat(this.gradePoints) > 0 &&
-      this.code !== "F" &&
-      this.code !== "AB" &&
-      this.code !== "I"
-    );
-  },
-
-  /**
-   * Archive grade scale (mark as inactive)
-   */
-  async archive() {
-    this.isActive = false;
-    return this.save();
-  },
+// Calculate grade from percentage
+gradeScaleSchema.statics.calculateGrade = function (percentage) {
+  const grades = this.getVTUGradeScale();
+  return (
+    grades.find(
+      (grade) =>
+        percentage >= grade.minPercentage && percentage <= grade.maxPercentage,
+    ) || { gradeLetter: "F", gradePoint: 0 }
+  );
 };
 
-const GradeScale = mongoose.model("GradeScale", gradeScaleSchema);
+export const GradeScale = mongoose.model("GradeScale", gradeScaleSchema);
+
 export default GradeScale;
