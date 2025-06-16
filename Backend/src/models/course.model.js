@@ -59,8 +59,8 @@ const courseSchema = new mongoose.Schema(
       min: [0, "Credits cannot be negative"],
       max: [5, "VTU credits cannot exceed 5"],
       validate: {
-        validator: (v) => [0, 1, 2, 3, 4, 5].includes(v),
-        message: "Credits must be between 0 and 5 as per VTU norms",
+        validator: Number.isInteger,
+        message: "Credits must be an integer",
       },
     },
     courseType: {
@@ -77,30 +77,45 @@ const courseSchema = new mongoose.Schema(
       required: [true, "Semester is required"],
       min: [1, "Semester must be at least 1"],
       max: [8, "Semester cannot exceed 8"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Semester must be an integer",
+      },
     },
     lectureHours: {
       type: Number,
       default: 0,
       min: [0, "Lecture hours cannot be negative"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Lecture hours must be an integer",
+      },
     },
     tutorialHours: {
       type: Number,
       default: 0,
       min: [0, "Tutorial hours cannot be negative"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Tutorial hours must be an integer",
+      },
     },
     practicalHours: {
       type: Number,
       default: 0,
       min: [0, "Practical hours cannot be negative"],
+      validate: {
+        validator: Number.isInteger,
+        message: "Practical hours must be an integer",
+      },
     },
     isLabCourse: {
       type: Boolean,
       default: false,
     },
     scheme: {
-      type: String,
-      enum: ["CBGS", "CBCS", "OTHERS"],
-      default: "CBCS",
+      type: Number,
+      default: 22,
     },
     status: {
       type: String,
@@ -108,15 +123,23 @@ const courseSchema = new mongoose.Schema(
       default: "active",
       index: true,
     },
-    CreatedBy: {
+    createdBy: {
+      // Fixed case consistency
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
     },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
+    allocations: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CourseAllocation",
+      },
+    ],
   },
   {
     timestamps: true,
@@ -125,15 +148,12 @@ const courseSchema = new mongoose.Schema(
   },
 );
 
-// Indexes (no duplicate text index)
+// Indexes
 courseSchema.index({ code: 1 }, { unique: true });
 courseSchema.index({ department: 1 });
 courseSchema.index({ courseType: 1 });
 courseSchema.index({ semester: 1 });
-
-// Ensure only one text index exists
-// ⚠️ Drop the previous one in MongoDB if needed before uncommenting this line
-courseSchema.index({ name: "text", description: "text", code: "text" });
+courseSchema.index({ name: "text", description: "text", code: "text" }); // Uncommented text index
 
 // Virtuals
 courseSchema.virtual("courseTypeName").get(function () {
@@ -154,8 +174,7 @@ courseSchema.methods.changeStatus = function (newStatus, userId) {
     throw new Error("Invalid status value");
   }
   this.status = newStatus;
-  this.CreatedBy = userId;
-  this.updatedBy = userId;
+  this.updatedBy = userId; // Only update updatedBy field
   return this.save();
 };
 
@@ -177,10 +196,19 @@ courseSchema.statics.getCourseTypes = function () {
 courseSchema.pre("save", function (next) {
   const totalHours = this.totalHours;
 
-  if (this.isLabCourse && this.practicalHours < 2) {
-    return next(new Error("Lab courses must have at least 2 practical hours"));
+  // Validate lab courses
+  if (this.isLabCourse) {
+    if (this.practicalHours < 2) {
+      return next(
+        new Error("Lab courses must have at least 2 practical hours"),
+      );
+    }
+    if (this.credits < 1) {
+      return next(new Error("Lab courses must have at least 1 credit"));
+    }
   }
 
+  // Validate non-credit courses
   if (this.credits === 0 && totalHours > 0) {
     return next(new Error("Non-credit courses should not have teaching hours"));
   }

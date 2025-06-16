@@ -49,6 +49,12 @@ const semesterSchema = new mongoose.Schema(
       enum: ["upcoming", "current", "completed"],
       required: [true, "Semester status is required"],
     },
+    courseAllocations: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CourseAllocation",
+      },
+    ],
   },
   {
     timestamps: true,

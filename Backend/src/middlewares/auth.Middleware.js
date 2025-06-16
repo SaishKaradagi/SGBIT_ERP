@@ -61,6 +61,7 @@ export const verifyJWT = asyncHandler(async (req, res, next) => {
     // Attach user to request object
     req.user = {
       _id: user._id,
+      name: user.firstName + " " + user.lastName,
       email: user.email,
       role: user.role,
       status: user.status, // <- make sure this is included!

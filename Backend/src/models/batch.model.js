@@ -101,6 +101,12 @@ const batchSchema = new mongoose.Schema(
       max: [1000, "Capacity cannot exceed 1000"],
       default: 60,
     },
+    courseAllocations: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CourseAllocation",
+      },
+    ],
   },
   {
     timestamps: true,
@@ -151,7 +157,10 @@ batchSchema.virtual("students", {
 
 // Static method to find batches by department
 batchSchema.statics.findByDepartment = function (departmentId) {
-  return this.find({ department: departmentId, status: { $ne: "CANCELLED" } }).sort({
+  return this.find({
+    department: departmentId,
+    status: { $ne: "CANCELLED" },
+  }).sort({
     startDate: -1,
   });
 };
@@ -170,9 +179,7 @@ batchSchema.statics.findActiveBatches = function () {
 batchSchema.methods.isCurrentlyActive = function () {
   const now = new Date();
   return (
-    this.startDate <= now &&
-    now <= this.endDate &&
-    this.status === "ACTIVE"
+    this.startDate <= now && now <= this.endDate && this.status === "ACTIVE"
   );
 };
 

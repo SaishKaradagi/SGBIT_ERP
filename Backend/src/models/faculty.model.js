@@ -330,6 +330,12 @@ const facultySchema = new mongoose.Schema(
         ref: "Course",
       },
     ],
+    courseAllocations: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "CourseAllocation",
+      },
+    ],
     // Mentorship Information
     mentees: [
       {
@@ -396,12 +402,14 @@ facultySchema.virtual("publicationsCount").get(function () {
   return this.publications ? this.publications.length : 0;
 });
 
-// Virtual to get course allocations
-facultySchema.virtual("courseAllocations", {
-  ref: "CourseAllocation",
-  localField: "_id",
-  foreignField: "faculty",
-});
+// // Virtual to get course allocations
+// facultySchema.virtual("courseAllocations", {
+//   ref: "CourseAllocation",
+//   localField: "_id",
+//   foreignField: "faculty",
+// });
+facultySchema.set("toObject", { virtuals: true });
+facultySchema.set("toJSON", { virtuals: true });
 
 // Virtual to get faculty leaves
 facultySchema.virtual("leaves", {
@@ -631,5 +639,6 @@ facultySchema.pre(/^find/, function (next) {
 });
 
 // Define the model and export
-const Faculty = mongoose.models.Faculty || mongoose.model('Faculty', facultySchema);
+const Faculty =
+  mongoose.models.Faculty || mongoose.model("Faculty", facultySchema);
 export default Faculty;

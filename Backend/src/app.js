@@ -12,6 +12,7 @@ import SuperAdmin from "./routes/SuperAdmin.routes.js";
 import AdminDashboard from "./routes/AdminDashboard.routes.js";
 import Student from "./models/student.model.js";
 import StudentManagement from "./routes/StudentManagement.routes.js";
+import CourseManagement from "./routes/CourseManagement.routes.js";
 // import { initializeSystem } from "./utils/initSuperAdmin.js";
 // Create Express app
 const app = express();
@@ -32,6 +33,7 @@ app.use("/api/v1/SuperAdmin/", SuperAdmin);
 app.use("/api/v1/admin", AdminDashboard);
 
 app.use("/api/v1/StudentManagement", StudentManagement);
+app.use("/api/v1/courses", CourseManagement);
 // Add other routes here as your application grows
 // app.use("/api/v1/users", userRoutes);
 // app.use("/api/v1/students", studentRoutes);
